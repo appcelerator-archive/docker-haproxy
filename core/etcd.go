@@ -77,6 +77,7 @@ func (inst *ETCDClient) watchForServicesUpdate() {
 		fmt.Printf("Key updated: %q\n", ev.Kv.Key)
 	}
 	time.Sleep(5 * time.Second)
+	haproxy.loadTry = 0
 	haproxy.updateConfiguration(true)
 }
 
@@ -109,12 +110,12 @@ func (inst *ETCDClient) getAllPublicServices(stackID string) (map[string]*public
 				}
 				serviceMap[servSpec.Name] = &pService
 				for _, mapping := range servSpec.PublishSpecs {
-					if mapping.Name != "" {
+					if mapping.Name != "" && mapping.InternalPort != 0 {
 						pService.mapping[mapping.Name] = fmt.Sprintf("%d", mapping.InternalPort)
 						fmt.Printf("add service %s mapping: %s\n", servSpec.Name, mapping.Name)
 					}
 				}
-			} 
+			}
 		}
 	}
 	return serviceMap, nil

@@ -7,12 +7,14 @@ import (
 	"os/exec"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 //HAProxy haproxy struct
 type HAProxy struct {
 	exec          *exec.Cmd
 	isLoadingConf bool
+	loadTry	      int
 }
 
 type publicService struct {
@@ -31,7 +33,7 @@ var (
 //Set app mate initial values
 func (app *HAProxy) init() {
 	app.isLoadingConf = false
-	app.updateConfiguration(false)
+	app.loadTry = 0
 }
 
 //Launch a routine to catch SIGTERM Signal
@@ -50,7 +52,7 @@ func (app *HAProxy) trapSignal() {
 //Launch HAProxy using cmd command
 func (app *HAProxy) start() {
 	go func() {
-		fmt.Println("launching HAProxy")
+		fmt.Println("launching HAProxy on initial configuration")
 		app.exec = exec.Command("haproxy", "-f", "/usr/local/etc/haproxy/haproxy.cfg")
 		app.exec.Stdout = os.Stdout
 		app.exec.Stderr = os.Stderr
@@ -83,19 +85,24 @@ func (app *HAProxy) reloadConfiguration() {
 	go func() {
 		err := app.exec.Run()
 		app.isLoadingConf = false
-		if err != nil {
-			fmt.Printf("HAProxy reload configuration error: %v\n", err)
-			time.Sleep(10 * time.Second)
-			os.Exit(1)
-		} else {
-			fmt.Println("HAProxy configuration reloaded")
+		if err == nil {
+			fmt.Printf("HAProxy configuration reloaded")
+			return
 		}
+		app.loadTry++
+		fmt.Printf("HAProxy reload configuration error, try=%s: %v\n", app.loadTry, err)
+		if (app.loadTry > 6) {
+			os.Exit(1)
+		} 
+		time.Sleep(10 * time.Second)
+		app.updateConfiguration(true)	
 	}()
 }
 
 //update HAProxy configuration regarding ETCD keys values and make HAProxy reload its configuration if reload is true
 func (app *HAProxy) updateConfiguration(reload bool) error {
 	if conf.stackName == "" {
+		//pp.executeDNSPatch()
 		return app.updateConfigurationMaster(reload)
 	}
 	return app.updateConfigurationStack(reload)

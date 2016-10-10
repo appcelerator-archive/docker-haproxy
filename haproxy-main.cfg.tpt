@@ -1,8 +1,14 @@
 global
     maxconn 256
+    stats socket /var/run/haproxy.sock mode 600 level admin
+    stats timeout 2m
 
 resolvers docker
     nameserver dnsmasq 127.0.0.1:53
+    resolve_retries       3
+    timeout retry         3s
+    hold valid           10s    
+
 
 defaults
     mode http
@@ -24,7 +30,7 @@ frontend http-in
 
     use_backend amp-ui if { hdr_beg(host) -i ui. }
     use_backend elasticsearch if { hdr_beg(host) -i elasticsearch. }
-    #use_backend grafana if { hdr_beg(host) -i grafana. }
+    use_backend grafana if { hdr_beg(host) -i grafana. }
     #use_backend kibana if { hdr_beg(host) -i kibana. }
     use_backend registry if { hdr_beg(host) -i registry. }
 [frontend]
@@ -56,6 +62,9 @@ backend amp-ui
 
 backend elasticsearch
     server elasticsearch1 elasticsearch:9200 check resolvers docker resolve-prefer ipv4
+
+backend grafana
+    server grafana1 127.0.0.1:3000 check resolvers docker resolve-prefer ipv4 disabled
 
 [backends]
 
