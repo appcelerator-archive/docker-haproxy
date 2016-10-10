@@ -1,0 +1,143 @@
+hash: 657b31a4a5f871caf3e969e18cc53682c3ce16d265c2cac94b150fb7332335d3
+updated: 2016-09-30T14:47:02.239959093+02:00
+imports:
+- name: github.com/appcelerator/amp
+  version: 4859dec481baea5cadc4a4afa1a2fe2fd649ff86
+  subpackages:
+  - api/rpc/service
+  - api/rpc/stack
+  - api/runtime
+  - api/state
+  - data/elasticsearch
+  - data/influx
+  - data/kafka
+  - data/storage
+- name: github.com/cloudfoundry-incubator/candiedyaml
+  version: 99c3df83b51532e3615f851d8c2dbb638f5313bf
+- name: github.com/coreos/etcd
+  version: 2469a9568548b3f8abc22f5a2462c3443823334a
+  subpackages:
+  - auth/authpb
+  - clientv3
+  - etcdserver/api/v3rpc/rpctypes
+  - etcdserver/etcdserverpb
+  - mvcc/mvccpb
+  - pkg/tlsutil
+- name: github.com/davecgh/go-spew
+  version: 6d212800a42e8ab5c146b8ace3490ee17e5225f9
+  subpackages:
+  - spew
+- name: github.com/docker/distribution
+  version: 99cb7c0946d2f5a38015443e515dc916295064d7
+  subpackages:
+  - digest
+  - reference
+- name: github.com/docker/docker
+  version: 1d669d82c1d5691f9706112acdbe4f70812cf6aa
+  subpackages:
+  - api/types
+  - api/types/blkiodev
+  - api/types/container
+  - api/types/events
+  - api/types/filters
+  - api/types/mount
+  - api/types/network
+  - api/types/reference
+  - api/types/registry
+  - api/types/strslice
+  - api/types/swarm
+  - api/types/time
+  - api/types/versions
+  - client
+  - pkg/random
+  - pkg/stringid
+  - pkg/tlsconfig
+- name: github.com/docker/go-connections
+  version: 988efe982fdecb46f01d53465878ff1f2ff411ce
+  subpackages:
+  - nat
+  - sockets
+  - tlsconfig
+- name: github.com/docker/go-units
+  version: f2145db703495b2e525c59662db69a7344b00bb8
+- name: github.com/eapache/go-resiliency
+  version: b86b1ec0dd4209a588dc1285cdd471e73525c0b3
+  subpackages:
+  - breaker
+- name: github.com/eapache/go-xerial-snappy
+  version: bb955e01b9346ac19dc29eb16586c90ded99a98c
+- name: github.com/eapache/queue
+  version: 44cc805cf13205b55f69e14bcb69867d1ae92f98
+- name: github.com/ghodss/yaml
+  version: aa0c862057666179de291b67d9f093d12b5a8473
+- name: github.com/golang/protobuf
+  version: 1f49d83d9aa00e6ce4fc8258c71cc7786aec968a
+  subpackages:
+  - jsonpb
+  - proto
+- name: github.com/golang/snappy
+  version: d9eb7a3d35ec988b8585d4a0068e462c27d28380
+- name: github.com/grpc-ecosystem/grpc-gateway
+  version: acebe0f9ff5993e130b141ee60e83e592839ca22
+  subpackages:
+  - runtime
+  - runtime/internal
+  - utilities
+- name: github.com/influxdata/influxdb
+  version: 11cf7596522bb86e98bff5da44fed520da83b9b0
+  subpackages:
+  - client/v2
+  - models
+  - pkg/escape
+- name: github.com/klauspost/crc32
+  version: 19b0b332c9e4516a6370a0456e6182c3b5036720
+- name: github.com/Microsoft/go-winio
+  version: ce2922f643c8fd76b46cadc7f404a06282678b34
+- name: github.com/opencontainers/runc
+  version: 3597b7b743c18b9813cba347d67dfbba69373842
+  subpackages:
+  - libcontainer/user
+- name: github.com/pkg/errors
+  version: 645ef00459ed84a119197bfb8d8205042c6df63d
+- name: github.com/rcrowley/go-metrics
+  version: ab2277b1c5d15c3cba104e9cbddbdfc622df5ad8
+- name: github.com/Shopify/sarama
+  version: af0513c4d97979eb876d201391fac6475ec08268
+- name: github.com/Sirupsen/logrus
+  version: 3ec0642a7fb6488f65b06f9040adc67e3990296a
+- name: golang.org/x/net
+  version: a333c534c871727fb95745870e8b98a69447f2ce
+  subpackages:
+  - context
+  - context/ctxhttp
+  - http2
+  - http2/hpack
+  - idna
+  - internal/timeseries
+  - lex/httplex
+  - proxy
+  - trace
+- name: golang.org/x/sys
+  version: 8f0908ab3b2457e2e15403d3697c9ef5cb4b57a9
+  subpackages:
+  - unix
+  - windows
+- name: google.golang.org/grpc
+  version: 0032a855ba5c8a3c8e0d71c2deef354b70af1584
+  subpackages:
+  - codes
+  - credentials
+  - grpclog
+  - internal
+  - metadata
+  - naming
+  - peer
+  - transport
+- name: gopkg.in/olivere/elastic.v3
+  version: 3f5e619b7a90ff8d4ad81a53ca8e74ee79b83b42
+  subpackages:
+  - backoff
+  - uritemplates
+- name: gopkg.in/yaml.v2
+  version: a5b47d31c556af34a302ce5d659e6fea44d90de0
+testImports: []

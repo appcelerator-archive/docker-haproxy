@@ -1,0 +1,31 @@
+global
+    maxconn 256
+
+resolvers docker
+    nameserver dnsmasq 127.0.0.1:53
+
+defaults
+    mode http
+    log global
+    option httplog
+    timeout connect 5000ms
+    timeout client 50000ms
+    timeout server 50000ms
+
+frontend http-in
+    bind *:80
+    monitor-uri /healthcheck
+[frontend]
+    default_backend controler_api
+
+
+backend controler_api
+    server controler_api1 localhost:8090
+
+[backends]
+
+listen admin
+    bind *:8082
+    stats enable
+    stats uri     /admin?stats
+    stats realm   Haproxy\ Statistics

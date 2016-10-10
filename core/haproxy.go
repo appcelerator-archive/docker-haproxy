@@ -1,0 +1,255 @@
+package core
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"os/exec"
+	"os/signal"
+	"syscall"
+)
+
+//HAProxy haproxy struct
+type HAProxy struct {
+	exec          *exec.Cmd
+	isLoadingConf bool
+}
+
+type publicService struct {
+	name    string
+	mapping map[string]string
+}
+
+type publicStack struct {
+	name string
+}
+
+var (
+	haproxy HAProxy
+)
+
+//Set app mate initial values
+func (app *HAProxy) init() {
+	app.isLoadingConf = false
+	app.updateConfiguration(false)
+}
+
+//Launch a routine to catch SIGTERM Signal
+func (app *HAProxy) trapSignal() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt)
+	signal.Notify(ch, syscall.SIGTERM)
+	go func() {
+		<-ch
+		fmt.Println("\namp-haproxy-controller received SIGTERM signal")
+		etcdClient.Close()
+		os.Exit(1)
+	}()
+}
+
+//Launch HAProxy using cmd command
+func (app *HAProxy) start() {
+	go func() {
+		fmt.Println("launching HAProxy")
+		app.exec = exec.Command("haproxy", "-f", "/usr/local/etc/haproxy/haproxy.cfg")
+		app.exec.Stdout = os.Stdout
+		app.exec.Stderr = os.Stderr
+		err := app.exec.Run()
+		if err != nil {
+			fmt.Printf("HAProxy exit with error: %v\n", err)
+			etcdClient.Close()
+			os.Exit(1)
+		}
+	}()
+}
+
+//Stop HAProxy
+func (app *HAProxy) stop() {
+	fmt.Println("Send SIGTERM signal to HAProxy")
+	if app.exec != nil {
+		app.exec.Process.Kill()
+	}
+}
+
+//Launch HAProxy using cmd command
+func (app *HAProxy) reloadConfiguration() {
+	app.isLoadingConf = true
+	fmt.Println("reloading HAProxy configuration")
+	pid := app.exec.Process.Pid
+	fmt.Printf("Execute: %s %s %s %s %d\n", "haproxy", "-f", "/usr/local/etc/haproxy/haproxy.cfg", "-sf", pid)
+	app.exec = exec.Command("haproxy", "-f", "/usr/local/etc/haproxy/haproxy.cfg", "-sf", fmt.Sprintf("%d", pid))
+	app.exec.Stdout = os.Stdout
+	app.exec.Stderr = os.Stderr
+	go func() {
+		err := app.exec.Run()
+		app.isLoadingConf = false
+		if err != nil {
+			fmt.Printf("HAProxy reload configuration error: %v\n", err)
+			time.Sleep(10 * time.Second)
+			os.Exit(1)
+		} else {
+			fmt.Println("HAProxy configuration reloaded")
+		}
+	}()
+}
+
+//update HAProxy configuration regarding ETCD keys values and make HAProxy reload its configuration if reload is true
+func (app *HAProxy) updateConfiguration(reload bool) error {
+	if conf.stackName == "" {
+		return app.updateConfigurationMaster(reload)
+	}
+	return app.updateConfigurationStack(reload)
+}
+
+//update HAProxy configuration for master regarding ETCD keys values and make HAProxy reload its configuration if reload is true
+func (app *HAProxy) updateConfigurationMaster(reload bool) error {
+	fmt.Println("update HAProxy configuration")
+	list, err := etcdClient.getAllStacks()
+	if err != nil {
+		fmt.Println("Erreur on get stacks list: ", err)
+	}
+	fileNameTarget := "/usr/local/etc/haproxy/haproxy.cfg"
+	fileNameTpt := "/usr/local/etc/haproxy/haproxy-main.cfg.tpt"
+	file, err := os.Create(fileNameTarget + ".new")
+	if err != nil {
+		fmt.Printf("Error creating new haproxy conffile for creation: %v\n", err)
+		return err
+	}
+	filetpt, err := os.Open(fileNameTpt)
+	if err != nil {
+		fmt.Printf("Error opening conffile template: %s : %v\n", fileNameTpt, err)
+		return err
+	}
+	scanner := bufio.NewScanner(filetpt)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "[frontend]" {
+			app.writeStackFrontend(file, list)
+		} else if line == "[backends]" {
+			app.writeStackBackend(file, list)
+		} else {
+			file.WriteString(line + "\n")
+		}
+	}
+	if err = scanner.Err(); err != nil {
+		fmt.Printf("Error reading haproxy conffile template: %s %v\n", fileNameTpt, err)
+		file.Close()
+		return err
+	}
+	file.Close()
+	os.Remove(fileNameTarget)
+	err2 := os.Rename(fileNameTarget+".new", fileNameTarget)
+	if err2 != nil {
+		fmt.Printf("Error renaming haproxy conffile .new: %v\n", err)
+		return err
+	}
+	fmt.Println("HAProxy configuration updated")
+	if reload {
+		app.reloadConfiguration()
+	}
+	return nil
+}
+
+//update HAProxy configuration for stack regarding ETCD keys values and make HAProxy reload its configuration if reload is true
+func (app *HAProxy) updateConfigurationStack(reload bool) error {
+	fmt.Println("update HAProxy configuration")
+	list, err := etcdClient.getAllPublicServices(conf.stackName)
+	if err != nil {
+		fmt.Println("Erreur on get services list: ", err)
+	}
+	fileNameTarget := "/usr/local/etc/haproxy/haproxy.cfg"
+	fileNameTpt := "/usr/local/etc/haproxy/haproxy-stack.cfg.tpt"
+	file, err := os.Create(fileNameTarget + ".new")
+	if err != nil {
+		fmt.Printf("Error creating new haproxy conffile for creation: %v\n", err)
+		return err
+	}
+	filetpt, err := os.Open(fileNameTpt)
+	if err != nil {
+		fmt.Printf("Error opening conffile template: %s : %v\n", fileNameTpt, err)
+		return err
+	}
+	scanner := bufio.NewScanner(filetpt)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "[frontend]" {
+			app.writeServiceFrontend(file, list)
+		} else if line == "[backends]" {
+			app.writeServiceBackend(file, list)
+		} else {
+			file.WriteString(line + "\n")
+		}
+	}
+	if err = scanner.Err(); err != nil {
+		fmt.Printf("Error reading haproxy conffile template: %s %v\n", fileNameTpt, err)
+		file.Close()
+		return err
+	}
+	file.Close()
+	os.Remove(fileNameTarget)
+	err2 := os.Rename(fileNameTarget+".new", fileNameTarget)
+	if err2 != nil {
+		fmt.Printf("Error renaming haproxy conffile .new: %v\n", err)
+		return err
+	}
+	fmt.Println("HAProxy configuration updated")
+	if reload {
+		app.reloadConfiguration()
+	}
+	return nil
+}
+
+func (app *HAProxy) writeServiceFrontend(file *os.File, serviceMap map[string]*publicService) error {
+	fmt.Println("Update frontend")
+	for _, service := range serviceMap {
+		for extName, intPort := range service.mapping {
+			line := fmt.Sprintf("use_backend bk_%s%s if { hdr_beg(host) -i %s. }\n", service.name, intPort, extName)
+			file.WriteString("\t" + line)
+			fmt.Printf(line)
+		}
+
+	}
+	return nil
+}
+
+func (app *HAProxy) writeServiceBackend(file *os.File, serviceMap map[string]*publicService) error {
+	fmt.Println("Update backends")
+	for _, service := range serviceMap {
+		for _, intPort := range service.mapping {
+			file.WriteString("\n")
+			line1 := fmt.Sprintf("\nbackend bk_%s%s\n", service.name, intPort)
+			file.WriteString(line1)
+			fmt.Printf(line1)
+			line2 := fmt.Sprintf("server %s_1 %s:%s check resolvers docker resolve-prefer ipv4\n", service.name, service.name, intPort)
+			file.WriteString("\t" + line2)
+			fmt.Printf(line2)
+		}
+	}
+	file.WriteString("\n")
+	return nil
+}
+
+func (app *HAProxy) writeStackFrontend(file *os.File, stackMap map[string]*publicStack) error {
+	fmt.Println("Update frontend")
+	for _, stack := range stackMap {
+		line := fmt.Sprintf("use_backend bk_%s if { hdr_dom(host) -i .%s. }\n", stack.name, stack.name)
+		file.WriteString("\t" + line)
+		fmt.Printf(line)
+	}
+	return nil
+}
+
+func (app *HAProxy) writeStackBackend(file *os.File, stackMap map[string]*publicStack) error {
+	fmt.Println("Update backends")
+	for _, stack := range stackMap {
+		file.WriteString("\n")
+		line1 := fmt.Sprintf("\nbackend bk_%s\n", stack.name)
+		file.WriteString(line1)
+		fmt.Printf(line1)
+		line2 := fmt.Sprintf("server %s_1 %s-haproxy:80 check resolvers docker resolve-prefer ipv4\n", stack.name, stack.name)
+		file.WriteString("\t" + line2)
+		fmt.Printf(line2)
+	}
+	file.WriteString("\n")
+	return nil
+}
