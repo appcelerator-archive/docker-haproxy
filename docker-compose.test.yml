@@ -1,0 +1,28 @@
+version: "2"
+services:
+  sut:
+    image: appcelerator/sut
+    build:
+      context: ./sut
+      dockerfile: Dockerfile
+    depends_on:
+      - haproxy
+
+  etcd:
+    image: appcelerator/etcd:3.0.10
+    command: ["--listen-client-urls", "http://0.0.0.0:2379", "--advertise-client-urls", "http://etcd:2379"]
+
+  haproxy:
+    image: appcelerator/haproxy
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+    ports:
+      - "80:80"
+      - "8080:8080"
+      - "8082:8082"
+    command: ["/go/bin/docker-haproxy", "--disable-backends"]
+    depends_on:
+      - etcd
