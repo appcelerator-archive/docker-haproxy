@@ -64,7 +64,7 @@ backend elasticsearch
     server elasticsearch1 elasticsearch:9200 check resolvers docker resolve-prefer ipv4
 
 backend grafana
-    server grafana1 127.0.0.1:3000 check resolvers docker resolve-prefer ipv4 disabled
+    server grafana1 grafana:3000 check resolvers docker resolve-prefer ipv4
 
 [backends]
 
