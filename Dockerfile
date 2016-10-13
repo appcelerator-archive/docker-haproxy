@@ -19,6 +19,7 @@ RUN apk update && \
     echo amp-haproxy built && \
     rm /go/bin/glide && \
     apk del binutils-libs binutils gmp isl libgomp libatomic libgcc pkgconf pkgconfig mpfr3 mpc1 libstdc++ gcc go && \
+    apk del build-deps && \
     cd / && rm -rf /go/src /go/pkg /var/cache/apk/* /root/.cache /root/.glide && \
     chmod +x $GOPATH/bin/*
 
