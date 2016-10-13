@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"github.com/appcelerator/docker-haproxy/core"
 	"os"
@@ -15,5 +16,11 @@ func main() {
 		//todo
 		os.Exit(0)
 	}
-	core.Run(version)
+	disableBackends := flag.Bool("disable-backends", false, "disable all default backends in haproxy configuration")
+	flag.Parse()
+	var coreArgs []string
+	if *disableBackends {
+		coreArgs = append(coreArgs, "disableBackends")
+	}
+	core.Run(version, coreArgs)
 }
