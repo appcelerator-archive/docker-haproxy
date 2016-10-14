@@ -117,9 +117,8 @@ var HelpPrinter helpPrinter = printHelp
 var VersionPrinter = printVersion
 
 // ShowAppHelp is an action that displays the help.
-func ShowAppHelp(c *Context) error {
+func ShowAppHelp(c *Context) {
 	HelpPrinter(c.App.Writer, AppHelpTemplate, c.App)
-	return nil
 }
 
 // DefaultAppComplete prints the list of subcommands as the default app completion method
@@ -240,7 +239,7 @@ func checkCommandHelp(c *Context, name string) bool {
 }
 
 func checkSubcommandHelp(c *Context) bool {
-	if c.Bool("h") || c.Bool("help") {
+	if c.GlobalBool("h") || c.GlobalBool("help") {
 		ShowSubcommandHelp(c)
 		return true
 	}

@@ -58,8 +58,7 @@ func mergeSwarm(swarm *swarm.Swarm, flags *pflag.FlagSet) error {
 	spec := &swarm.Spec
 
 	if flags.Changed(flagTaskHistoryLimit) {
-		taskHistoryRetentionLimit, _ := flags.GetInt64(flagTaskHistoryLimit)
-		spec.Orchestration.TaskHistoryRetentionLimit = &taskHistoryRetentionLimit
+		spec.Orchestration.TaskHistoryRetentionLimit, _ = flags.GetInt64(flagTaskHistoryLimit)
 	}
 
 	if flags.Changed(flagDispatcherHeartbeat) {

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"unsafe"
 )
 
 const (
@@ -119,8 +118,4 @@ func Annotations(labels []string) (bundle string, userAnnotations map[string]str
 		}
 	}
 	return
-}
-
-func GetIntSize() int {
-	return int(unsafe.Sizeof(1))
 }

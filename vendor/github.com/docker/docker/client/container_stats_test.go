@@ -13,7 +13,7 @@ import (
 
 func TestContainerStatsError(t *testing.T) {
 	client := &Client{
-		client: newMockClient(errorMock(http.StatusInternalServerError, "Server error")),
+		transport: newMockClient(nil, errorMock(http.StatusInternalServerError, "Server error")),
 	}
 	_, err := client.ContainerStats(context.Background(), "nothing", false)
 	if err == nil || err.Error() != "Error response from daemon: Server error" {
@@ -37,7 +37,7 @@ func TestContainerStats(t *testing.T) {
 	}
 	for _, c := range cases {
 		client := &Client{
-			client: newMockClient(func(r *http.Request) (*http.Response, error) {
+			transport: newMockClient(nil, func(r *http.Request) (*http.Response, error) {
 				if !strings.HasPrefix(r.URL.Path, expectedURL) {
 					return nil, fmt.Errorf("Expected URL '%s', got '%s'", expectedURL, r.URL)
 				}
@@ -54,12 +54,12 @@ func TestContainerStats(t *testing.T) {
 				}, nil
 			}),
 		}
-		resp, err := client.ContainerStats(context.Background(), "container_id", c.stream)
+		body, err := client.ContainerStats(context.Background(), "container_id", c.stream)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer resp.Body.Close()
-		content, err := ioutil.ReadAll(resp.Body)
+		defer body.Close()
+		content, err := ioutil.ReadAll(body)
 		if err != nil {
 			t.Fatal(err)
 		}

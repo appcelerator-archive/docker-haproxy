@@ -29,7 +29,7 @@ about a service in an easily readable format.
 
     ID:		9uk4639qpg7npwf3fn2aasksr
     Name:		helloworld
-    Service Mode:	REPLICATED
+    Mode:		REPLICATED
      Replicas:		1
     Placement:
     UpdateConfig:
@@ -37,8 +37,6 @@ about a service in an easily readable format.
     ContainerSpec:
      Image:		alpine
      Args:	ping docker.com
-    Resources:
-    Endpoint Mode:  vip
     ```
 
     >**Tip**: To return the service details in json format, run the same command
@@ -99,8 +97,8 @@ service:
     ```
     $ docker service ps helloworld
 
-    NAME                                    IMAGE   NODE     DESIRED STATE  LAST STATE
-    helloworld.1.8p1vev3fq5zm0mi8g0as41w35  alpine  worker2  Running        Running 3 minutes
+    ID                         NAME          SERVICE     IMAGE   LAST STATE         DESIRED STATE  NODE
+    8p1vev3fq5zm0mi8g0as41w35  helloworld.1  helloworld  alpine  Running 3 minutes  Running        worker2
     ```
 
     In this case, the one instance of the `helloworld` service is running on the

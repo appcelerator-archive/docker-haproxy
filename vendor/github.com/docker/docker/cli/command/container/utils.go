@@ -1,6 +1,7 @@
 package container
 
 import (
+	"fmt"
 	"strconv"
 
 	"golang.org/x/net/context"
@@ -10,10 +11,11 @@ import (
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/cli/command"
+	"github.com/docker/docker/cli/command/system"
 	clientapi "github.com/docker/docker/client"
 )
 
-func waitExitOrRemoved(dockerCli *command.DockerCli, ctx context.Context, containerID string, waitRemove bool) chan int {
+func waitExitOrRemoved(dockerCli *command.DockerCli, ctx context.Context, containerID string, waitRemove bool) (chan int, error) {
 	if len(containerID) == 0 {
 		// containerID can never be empty
 		panic("Internal Error: waitExitOrRemoved needs a containerID as parameter")
@@ -22,7 +24,11 @@ func waitExitOrRemoved(dockerCli *command.DockerCli, ctx context.Context, contai
 	statusChan := make(chan int)
 	exitCode := 125
 
-	eventProcessor := func(e events.Message) bool {
+	eventProcessor := func(e events.Message, err error) error {
+		if err != nil {
+			statusChan <- exitCode
+			return fmt.Errorf("failed to decode event: %v", err)
+		}
 
 		stopProcessing := false
 		switch e.Status {
@@ -47,10 +53,11 @@ func waitExitOrRemoved(dockerCli *command.DockerCli, ctx context.Context, contai
 
 		if stopProcessing {
 			statusChan <- exitCode
-			return true
+			// stop the loop processing
+			return fmt.Errorf("done")
 		}
 
-		return false
+		return nil
 	}
 
 	// Get events via Events API
@@ -60,29 +67,14 @@ func waitExitOrRemoved(dockerCli *command.DockerCli, ctx context.Context, contai
 	options := types.EventsOptions{
 		Filters: f,
 	}
+	resBody, err := dockerCli.Client().Events(ctx, options)
+	if err != nil {
+		return nil, fmt.Errorf("can't get events from daemon: %v", err)
+	}
 
-	eventCtx, cancel := context.WithCancel(ctx)
-	eventq, errq := dockerCli.Client().Events(eventCtx, options)
+	go system.DecodeEvents(resBody, eventProcessor)
 
-	go func() {
-		defer cancel()
-
-		for {
-			select {
-			case evt := <-eventq:
-				if eventProcessor(evt) {
-					return
-				}
-
-			case err := <-errq:
-				logrus.Errorf("error getting events from daemon: %v", err)
-				statusChan <- exitCode
-				return
-			}
-		}
-	}()
-
-	return statusChan
+	return statusChan, nil
 }
 
 // getExitCode performs an inspect on the container. It returns

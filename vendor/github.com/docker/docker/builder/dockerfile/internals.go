@@ -423,12 +423,14 @@ func (b *Builder) processImageFrom(img builder.Image) error {
 		}
 
 		total := len(ast.Children)
-		for _, n := range ast.Children {
-			if err := b.checkDispatch(n, true); err != nil {
-				return err
-			}
-		}
 		for i, n := range ast.Children {
+			switch strings.ToUpper(n.Value) {
+			case "ONBUILD":
+				return fmt.Errorf("Chaining ONBUILD via `ONBUILD ONBUILD` isn't allowed")
+			case "MAINTAINER", "FROM":
+				return fmt.Errorf("%s isn't allowed as an ONBUILD trigger", n.Value)
+			}
+
 			if err := b.dispatch(i, total, n); err != nil {
 				return err
 			}
@@ -438,16 +440,18 @@ func (b *Builder) processImageFrom(img builder.Image) error {
 	return nil
 }
 
-// probeCache checks if cache match can be found for current build instruction.
+// probeCache checks if `b.docker` implements builder.ImageCache and image-caching
+// is enabled (`b.UseCache`).
+// If so attempts to look up the current `b.image` and `b.runConfig` pair with `b.docker`.
 // If an image is found, probeCache returns `(true, nil)`.
 // If no image is found, it returns `(false, nil)`.
 // If there is any error, it returns `(false, err)`.
 func (b *Builder) probeCache() (bool, error) {
-	c := b.imageCache
-	if c == nil || b.options.NoCache || b.cacheBusted {
+	c, ok := b.docker.(builder.ImageCache)
+	if !ok || b.options.NoCache || b.cacheBusted {
 		return false, nil
 	}
-	cache, err := c.GetCache(b.image, b.runConfig)
+	cache, err := c.GetCachedImageOnBuild(b.image, b.runConfig)
 	if err != nil {
 		return false, err
 	}

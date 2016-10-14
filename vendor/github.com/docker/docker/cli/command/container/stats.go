@@ -5,24 +5,25 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"text/tabwriter"
 	"time"
 
 	"golang.org/x/net/context"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/cli"
 	"github.com/docker/docker/cli/command"
-	"github.com/docker/docker/cli/command/formatter"
 	"github.com/docker/docker/cli/command/system"
 	"github.com/spf13/cobra"
 )
 
 type statsOptions struct {
-	all        bool
-	noStream   bool
-	format     string
+	all      bool
+	noStream bool
+
 	containers []string
 }
 
@@ -43,7 +44,6 @@ func NewStatsCommand(dockerCli *command.DockerCli) *cobra.Command {
 	flags := cmd.Flags()
 	flags.BoolVarP(&opts.all, "all", "a", false, "Show all containers (default shows just running)")
 	flags.BoolVar(&opts.noStream, "no-stream", false, "Disable streaming stats and only pull the first result")
-	flags.StringVar(&opts.format, "format", "", "Pretty-print images using a Go template")
 	return cmd
 }
 
@@ -63,22 +63,24 @@ func runStats(dockerCli *command.DockerCli, opts *statsOptions) error {
 		options := types.EventsOptions{
 			Filters: f,
 		}
-
-		eventq, errq := dockerCli.Client().Events(ctx, options)
-
-		// Whether we successfully subscribed to eventq or not, we can now
+		resBody, err := dockerCli.Client().Events(ctx, options)
+		// Whether we successfully subscribed to events or not, we can now
 		// unblock the main goroutine.
 		close(started)
-
-		for {
-			select {
-			case event := <-eventq:
-				c <- event
-			case err := <-errq:
-				closeChan <- err
-				return
-			}
+		if err != nil {
+			closeChan <- err
+			return
 		}
+		defer resBody.Close()
+
+		system.DecodeEvents(resBody, func(event events.Message, err error) error {
+			if err != nil {
+				closeChan <- err
+				return nil
+			}
+			c <- event
+			return nil
+		})
 	}
 
 	// waitFirst is a WaitGroup to wait first stat data's reach for each container
@@ -96,10 +98,10 @@ func runStats(dockerCli *command.DockerCli, opts *statsOptions) error {
 			closeChan <- err
 		}
 		for _, container := range cs {
-			s := formatter.NewContainerStats(container.ID[:12], daemonOSType)
+			s := &containerStats{Name: container.ID[:12]}
 			if cStats.add(s) {
 				waitFirst.Add(1)
-				go collect(s, ctx, dockerCli.Client(), !opts.noStream, waitFirst)
+				go s.Collect(ctx, dockerCli.Client(), !opts.noStream, waitFirst)
 			}
 		}
 	}
@@ -113,19 +115,19 @@ func runStats(dockerCli *command.DockerCli, opts *statsOptions) error {
 		eh := system.InitEventHandler()
 		eh.Handle("create", func(e events.Message) {
 			if opts.all {
-				s := formatter.NewContainerStats(e.ID[:12], daemonOSType)
+				s := &containerStats{Name: e.ID[:12]}
 				if cStats.add(s) {
 					waitFirst.Add(1)
-					go collect(s, ctx, dockerCli.Client(), !opts.noStream, waitFirst)
+					go s.Collect(ctx, dockerCli.Client(), !opts.noStream, waitFirst)
 				}
 			}
 		})
 
 		eh.Handle("start", func(e events.Message) {
-			s := formatter.NewContainerStats(e.ID[:12], daemonOSType)
+			s := &containerStats{Name: e.ID[:12]}
 			if cStats.add(s) {
 				waitFirst.Add(1)
-				go collect(s, ctx, dockerCli.Client(), !opts.noStream, waitFirst)
+				go s.Collect(ctx, dockerCli.Client(), !opts.noStream, waitFirst)
 			}
 		})
 
@@ -148,10 +150,10 @@ func runStats(dockerCli *command.DockerCli, opts *statsOptions) error {
 		// Artificially send creation events for the containers we were asked to
 		// monitor (same code path than we use when monitoring all containers).
 		for _, name := range opts.containers {
-			s := formatter.NewContainerStats(name, daemonOSType)
+			s := &containerStats{Name: name}
 			if cStats.add(s) {
 				waitFirst.Add(1)
-				go collect(s, ctx, dockerCli.Client(), !opts.noStream, waitFirst)
+				go s.Collect(ctx, dockerCli.Client(), !opts.noStream, waitFirst)
 			}
 		}
 
@@ -164,11 +166,11 @@ func runStats(dockerCli *command.DockerCli, opts *statsOptions) error {
 		var errs []string
 		cStats.mu.Lock()
 		for _, c := range cStats.cs {
-			c.Mu.Lock()
-			if c.Err != nil {
-				errs = append(errs, fmt.Sprintf("%s: %v", c.Name, c.Err))
+			c.mu.Lock()
+			if c.err != nil {
+				errs = append(errs, fmt.Sprintf("%s: %v", c.Name, c.err))
 			}
-			c.Mu.Unlock()
+			c.mu.Unlock()
 		}
 		cStats.mu.Unlock()
 		if len(errs) > 0 {
@@ -178,34 +180,36 @@ func runStats(dockerCli *command.DockerCli, opts *statsOptions) error {
 
 	// before print to screen, make sure each container get at least one valid stat data
 	waitFirst.Wait()
-	f := "table"
-	if len(opts.format) > 0 {
-		f = opts.format
-	}
-	statsCtx := formatter.Context{
-		Output: dockerCli.Out(),
-		Format: formatter.NewStatsFormat(f, daemonOSType),
-	}
 
-	cleanHeader := func() {
+	w := tabwriter.NewWriter(dockerCli.Out(), 20, 1, 3, ' ', 0)
+	printHeader := func() {
 		if !opts.noStream {
 			fmt.Fprint(dockerCli.Out(), "\033[2J")
 			fmt.Fprint(dockerCli.Out(), "\033[H")
 		}
+		io.WriteString(w, "CONTAINER\tCPU %\tMEM USAGE / LIMIT\tMEM %\tNET I/O\tBLOCK I/O\tPIDS\n")
 	}
 
-	var err error
 	for range time.Tick(500 * time.Millisecond) {
-		cleanHeader()
-		cStats.mu.RLock()
-		csLen := len(cStats.cs)
-		if err = formatter.ContainerStatsWrite(statsCtx, cStats.cs); err != nil {
-			break
+		printHeader()
+		toRemove := []string{}
+		cStats.mu.Lock()
+		for _, s := range cStats.cs {
+			if err := s.Display(w); err != nil && !opts.noStream {
+				logrus.Debugf("stats: got error for %s: %v", s.Name, err)
+				if err == io.EOF {
+					toRemove = append(toRemove, s.Name)
+				}
+			}
 		}
-		cStats.mu.RUnlock()
-		if csLen == 0 && !showAll {
-			break
+		cStats.mu.Unlock()
+		for _, name := range toRemove {
+			cStats.remove(name)
 		}
+		if len(cStats.cs) == 0 && !showAll {
+			return nil
+		}
+		w.Flush()
 		if opts.noStream {
 			break
 		}
@@ -225,5 +229,5 @@ func runStats(dockerCli *command.DockerCli, opts *statsOptions) error {
 			// just skip
 		}
 	}
-	return err
+	return nil
 }

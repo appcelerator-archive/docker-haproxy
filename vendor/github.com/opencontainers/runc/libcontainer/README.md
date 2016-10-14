@@ -83,7 +83,6 @@ config := &configs.Config{
 	},
 	MaskPaths: []string{
 		"/proc/kcore",
-		"/sys/firmware",
 	},
 	ReadonlyPaths: []string{
 		"/proc/sys", "/proc/sysrq-trigger", "/proc/irq", "/proc/bus",
@@ -185,7 +184,7 @@ process := &libcontainer.Process{
 	Stderr: os.Stderr,
 }
 
-err := container.Run(process)
+err := container.Start(process)
 if err != nil {
 	container.Destroy()
 	logrus.Fatal(err)

@@ -77,11 +77,11 @@ func (l *tarexporter) parseNames(names []string) (map[image.ID]*imageDescriptor,
 			return nil, err
 		}
 		if id != "" {
-			_, err := l.is.Get(image.IDFromDigest(id))
+			_, err := l.is.Get(image.ID(id))
 			if err != nil {
 				return nil, err
 			}
-			addAssoc(image.IDFromDigest(id), nil)
+			addAssoc(image.ID(id), nil)
 			continue
 		}
 		if ref.Name() == string(digest.Canonical) {
@@ -95,7 +95,7 @@ func (l *tarexporter) parseNames(names []string) (map[image.ID]*imageDescriptor,
 		if reference.IsNameOnly(ref) {
 			assocs := l.rs.ReferencesByName(ref)
 			for _, assoc := range assocs {
-				addAssoc(image.IDFromDigest(assoc.ID), assoc.Ref)
+				addAssoc(assoc.ImageID, assoc.Ref)
 			}
 			if len(assocs) == 0 {
 				imgID, err := l.is.Search(name)
@@ -106,11 +106,11 @@ func (l *tarexporter) parseNames(names []string) (map[image.ID]*imageDescriptor,
 			}
 			continue
 		}
-		id, err = l.rs.Get(ref)
-		if err != nil {
+		var imgID image.ID
+		if imgID, err = l.rs.Get(ref); err != nil {
 			return nil, err
 		}
-		addAssoc(image.IDFromDigest(id), ref)
+		addAssoc(imgID, ref)
 
 	}
 	return imgDescr, nil
@@ -155,7 +155,7 @@ func (s *saveSession) save(outStream io.Writer) error {
 		}
 
 		manifest = append(manifest, manifestItem{
-			Config:       id.Digest().Hex() + ".json",
+			Config:       digest.Digest(id).Hex() + ".json",
 			RepoTags:     repoTags,
 			Layers:       layers,
 			LayerSources: foreignSrcs,
@@ -264,7 +264,7 @@ func (s *saveSession) saveImage(id image.ID) (map[layer.DiffID]distribution.Desc
 		}
 	}
 
-	configFile := filepath.Join(s.outDir, id.Digest().Hex()+".json")
+	configFile := filepath.Join(s.outDir, digest.Digest(id).Hex()+".json")
 	if err := ioutil.WriteFile(configFile, img.RawJSON(), 0644); err != nil {
 		return nil, err
 	}

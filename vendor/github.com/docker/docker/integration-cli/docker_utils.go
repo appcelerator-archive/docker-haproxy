@@ -84,7 +84,6 @@ func init() {
 		volumesConfigPath = strings.Replace(volumesConfigPath, `\`, `/`, -1)
 		containerStoragePath = strings.Replace(containerStoragePath, `\`, `/`, -1)
 	}
-	isolation = info.Isolation
 }
 
 func convertBasesize(basesizeBytes int64) (int64, error) {

@@ -29,9 +29,7 @@ type entry struct {
 
 // newEntry returns a new instance of entry.
 func newEntry() *entry {
-	return &entry{
-		values: make(Values, 0, 32),
-	}
+	return &entry{}
 }
 
 // add adds the given values to the entry.
@@ -263,7 +261,7 @@ func (c *Cache) Snapshot() (*Cache, error) {
 	// If no snapshot exists, create a new one, otherwise update the existing snapshot
 	if c.snapshot == nil {
 		c.snapshot = &Cache{
-			store: make(map[string]*entry, len(c.store)),
+			store: make(map[string]*entry),
 		}
 	}
 
@@ -284,7 +282,8 @@ func (c *Cache) Snapshot() (*Cache, error) {
 
 	snapshotSize := c.size // record the number of bytes written into a snapshot
 
-	c.store = make(map[string]*entry, len(c.store))
+	// Reset the cache
+	c.store = make(map[string]*entry)
 	c.size = 0
 	c.lastSnapshot = time.Now()
 

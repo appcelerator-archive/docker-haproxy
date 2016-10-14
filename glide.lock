@@ -1,8 +1,8 @@
-hash: 657b31a4a5f871caf3e969e18cc53682c3ce16d265c2cac94b150fb7332335d3
-updated: 2016-09-30T14:47:02.239959093+02:00
+hash: eb7aa034585c5ae1cf4a44d4996bb8de6e8fa1fea050fa87208e2a5b449ae02e
+updated: 2016-10-14T08:16:29.86784467+02:00
 imports:
 - name: github.com/appcelerator/amp
-  version: 4859dec481baea5cadc4a4afa1a2fe2fd649ff86
+  version: aa74515dae4318306f83651cc85c13edd1490ba1
   subpackages:
   - api/rpc/service
   - api/rpc/stack
@@ -12,8 +12,6 @@ imports:
   - data/influx
   - data/kafka
   - data/storage
-- name: github.com/cloudfoundry-incubator/candiedyaml
-  version: 99c3df83b51532e3615f851d8c2dbb638f5313bf
 - name: github.com/coreos/etcd
   version: 2469a9568548b3f8abc22f5a2462c3443823334a
   subpackages:
@@ -24,21 +22,20 @@ imports:
   - mvcc/mvccpb
   - pkg/tlsutil
 - name: github.com/davecgh/go-spew
-  version: 6d212800a42e8ab5c146b8ace3490ee17e5225f9
+  version: 5215b55f46b2b919f50a1df0eaa5886afe4e3b3d
   subpackages:
   - spew
 - name: github.com/docker/distribution
-  version: 99cb7c0946d2f5a38015443e515dc916295064d7
+  version: 12acdf0a6c1e56d965ac6eb395d2bce687bf22fc
   subpackages:
   - digest
   - reference
 - name: github.com/docker/docker
-  version: 1d669d82c1d5691f9706112acdbe4f70812cf6aa
+  version: 39f5d97cde3f93953be3c9172034b83d61bff710
   subpackages:
   - api/types
   - api/types/blkiodev
   - api/types/container
-  - api/types/events
   - api/types/filters
   - api/types/mount
   - api/types/network
@@ -49,11 +46,12 @@ imports:
   - api/types/time
   - api/types/versions
   - client
+  - client/transport
+  - client/transport/cancellable
   - pkg/random
   - pkg/stringid
-  - pkg/tlsconfig
 - name: github.com/docker/go-connections
-  version: 988efe982fdecb46f01d53465878ff1f2ff411ce
+  version: 990a1a1a70b0da4c4cb70e117971a4f0babfbf1a
   subpackages:
   - nat
   - sockets
@@ -69,22 +67,22 @@ imports:
 - name: github.com/eapache/queue
   version: 44cc805cf13205b55f69e14bcb69867d1ae92f98
 - name: github.com/ghodss/yaml
-  version: aa0c862057666179de291b67d9f093d12b5a8473
+  version: 73d445a93680fa1a78ae23a5839bad48f32ba1ee
 - name: github.com/golang/protobuf
-  version: 1f49d83d9aa00e6ce4fc8258c71cc7786aec968a
+  version: 8616e8ee5e20a1704615e6c8d7afcdac06087a67
   subpackages:
   - jsonpb
   - proto
 - name: github.com/golang/snappy
   version: d9eb7a3d35ec988b8585d4a0068e462c27d28380
 - name: github.com/grpc-ecosystem/grpc-gateway
-  version: acebe0f9ff5993e130b141ee60e83e592839ca22
+  version: f52d055dc48aec25854ed7d31862f78913cf17d1
   subpackages:
   - runtime
   - runtime/internal
   - utilities
 - name: github.com/influxdata/influxdb
-  version: 11cf7596522bb86e98bff5da44fed520da83b9b0
+  version: ff307047057b7797418998a4ed709b0c0f346324
   subpackages:
   - client/v2
   - models
@@ -94,36 +92,34 @@ imports:
 - name: github.com/Microsoft/go-winio
   version: ce2922f643c8fd76b46cadc7f404a06282678b34
 - name: github.com/opencontainers/runc
-  version: 3597b7b743c18b9813cba347d67dfbba69373842
+  version: b1e602e8ba592a663a4eb63ed9c18d6b2b475fec
   subpackages:
   - libcontainer/user
 - name: github.com/pkg/errors
-  version: 645ef00459ed84a119197bfb8d8205042c6df63d
-- name: github.com/rcrowley/go-metrics
-  version: ab2277b1c5d15c3cba104e9cbddbdfc622df5ad8
+  version: 17b591df37844cde689f4d5813e5cea0927d8dd2
 - name: github.com/Shopify/sarama
-  version: af0513c4d97979eb876d201391fac6475ec08268
+  version: bd61cae2be85fa6ff40eb23dcdd24567967ac2ae
 - name: github.com/Sirupsen/logrus
-  version: 3ec0642a7fb6488f65b06f9040adc67e3990296a
+  version: 55eb11d21d2a31a3cc93838241d04800f52e823d
+  subpackages:
+  - formatters/logstash
 - name: golang.org/x/net
-  version: a333c534c871727fb95745870e8b98a69447f2ce
+  version: 6acef71eb69611914f7a30939ea9f6e194c78172
   subpackages:
   - context
   - context/ctxhttp
   - http2
   - http2/hpack
-  - idna
   - internal/timeseries
-  - lex/httplex
   - proxy
   - trace
 - name: golang.org/x/sys
-  version: 8f0908ab3b2457e2e15403d3697c9ef5cb4b57a9
+  version: 9c60d1c508f5134d1ca726b4641db998f2523357
   subpackages:
   - unix
   - windows
 - name: google.golang.org/grpc
-  version: 0032a855ba5c8a3c8e0d71c2deef354b70af1584
+  version: 231b4cfea0e79843053a33f5fe90bd4d84b23cd3
   subpackages:
   - codes
   - credentials
@@ -134,10 +130,10 @@ imports:
   - peer
   - transport
 - name: gopkg.in/olivere/elastic.v3
-  version: 3f5e619b7a90ff8d4ad81a53ca8e74ee79b83b42
+  version: eaecbad7a83e6b60f131825553e5eb7fd5a50b41
   subpackages:
   - backoff
   - uritemplates
 - name: gopkg.in/yaml.v2
-  version: a5b47d31c556af34a302ce5d659e6fea44d90de0
+  version: 53feefa2559fb8dfa8d81baad31be332c97d6c77
 testImports: []

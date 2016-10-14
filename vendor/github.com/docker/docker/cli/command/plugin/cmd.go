@@ -8,6 +8,5 @@ import (
 )
 
 // NewPluginCommand returns a cobra command for `plugin` subcommands
-func NewPluginCommand(dockerCli *command.DockerCli) *cobra.Command {
-	return &cobra.Command{}
+func NewPluginCommand(cmd *cobra.Command, dockerCli *command.DockerCli) {
 }

@@ -1,22 +1,17 @@
 package: github.com/appcelerator/docker-haproxy
 import:
-- package: github.com/golang/protobuf
-  version: 1f49d83d9aa00e6ce4fc8258c71cc7786aec968a
-  subpackages:
-  - proto  
-- package: github.com/coreos/etcd
-  version: ^3.0.7
-  subpackages:
-  - clientv3
-- package: google.golang.org/grpc
-  version: ^1.0.1-GA
-  subpackages:
-  - codes
-  - metadata
 - package: github.com/appcelerator/amp
+  version: ^0.1.1
   subpackages:
   - api/rpc/service
   - api/rpc/stack
+- package: github.com/coreos/etcd
+  version: ^3.0.12
+  subpackages:
+  - clientv3
+- package: github.com/golang/protobuf
+  subpackages:
+  - proto
 - package: golang.org/x/net
   subpackages:
-  - context  
+  - context

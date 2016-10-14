@@ -20,10 +20,6 @@ const (
 
 type requestHandlerFunc func(req *request) (res encoder)
 
-// RequestNotifierFunc is invoked when a mock broker processes a request successfully
-// and will provides the number of bytes read and written.
-type RequestNotifierFunc func(bytesRead, bytesWritten int)
-
 // MockBroker is a mock Kafka broker that is used in unit tests. It is exposed
 // to facilitate testing of higher level or specialized consumers and producers
 // built on top of Sarama. Note that it does not 'mimic' the Kafka API protocol,
@@ -58,7 +54,6 @@ type MockBroker struct {
 	t            TestReporter
 	latency      time.Duration
 	handler      requestHandlerFunc
-	notifier     RequestNotifierFunc
 	history      []RequestResponse
 	lock         sync.Mutex
 }
@@ -88,14 +83,6 @@ func (b *MockBroker) SetHandlerByMap(handlerMap map[string]MockResponse) {
 		}
 		return mockResponse.For(req.body)
 	})
-}
-
-// SetNotifier set a function that will get invoked whenever a request has been
-// processed successfully and will provide the number of bytes read and written
-func (b *MockBroker) SetNotifier(notifier RequestNotifierFunc) {
-	b.lock.Lock()
-	b.notifier = notifier
-	b.lock.Unlock()
 }
 
 // BrokerID returns broker ID assigned to the broker.
@@ -193,7 +180,7 @@ func (b *MockBroker) handleRequests(conn net.Conn, idx int, wg *sync.WaitGroup) 
 
 	resHeader := make([]byte, 8)
 	for {
-		req, bytesRead, err := decodeRequest(conn)
+		req, err := decodeRequest(conn)
 		if err != nil {
 			Logger.Printf("*** mockbroker/%d/%d: invalid request: err=%+v, %+v", b.brokerID, idx, err, spew.Sdump(req))
 			b.serverError(err)
@@ -221,11 +208,6 @@ func (b *MockBroker) handleRequests(conn net.Conn, idx int, wg *sync.WaitGroup) 
 			break
 		}
 		if len(encodedRes) == 0 {
-			b.lock.Lock()
-			if b.notifier != nil {
-				b.notifier(bytesRead, 0)
-			}
-			b.lock.Unlock()
 			continue
 		}
 
@@ -239,12 +221,6 @@ func (b *MockBroker) handleRequests(conn net.Conn, idx int, wg *sync.WaitGroup) 
 			b.serverError(err)
 			break
 		}
-
-		b.lock.Lock()
-		if b.notifier != nil {
-			b.notifier(bytesRead, len(resHeader)+len(encodedRes))
-		}
-		b.lock.Unlock()
 	}
 	Logger.Printf("*** mockbroker/%d/%d: connection closed, err=%v", b.BrokerID(), idx, err)
 }

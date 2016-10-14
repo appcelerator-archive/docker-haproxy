@@ -1,33 +1,12 @@
-## v1.1.0 [unreleased]
-
-### Release Notes
-
-### Features
-
-- [#7120](https://github.com/influxdata/influxdb/issues/7120): Add additional statistics to query executor.
-- [#7135](https://github.com/influxdata/influxdb/pull/7135): Support enable HTTP service over unix domain socket. Thanks @oiooj
-- [#3634](https://github.com/influxdata/influxdb/issues/3634): Support mixed duration units.
-- [#7099](https://github.com/influxdata/influxdb/pull/7099): Implement text/csv content encoding for the response writer.
-- [#6992](https://github.com/influxdata/influxdb/issues/6992): Support tools for running async queries.
-- [#7136](https://github.com/influxdata/influxdb/pull/7136): Update jwt-go dependency to version 3.
-- [#6962](https://github.com/influxdata/influxdb/issues/6962): Support ON and use default database for SHOW commands.
-- [#7268](https://github.com/influxdata/influxdb/pull/7268): More man pages for the other tools we package and compress man pages fully.
-- [#7305](https://github.com/influxdata/influxdb/pull/7305): UDP Client: Split large points. Thanks @vlasad
-- [#7115](https://github.com/influxdata/influxdb/issues/7115): Feature request: `influx inspect -export` should dump WAL files.
+## v1.0.2 [2016-10-05]
 
 ### Bugfixes
 
-- [#1834](https://github.com/influxdata/influxdb/issues/1834): Drop time when used as a tag or field key.
-- [#7152](https://github.com/influxdata/influxdb/issues/7152): Decrement number of measurements only once when deleting the last series from a measurement.
-- [#7177](https://github.com/influxdata/influxdb/issues/7177): Fix base64 encoding issue with /debug/vars stats.
-- [#7196](https://github.com/influxdata/influxdb/issues/7196): Fix mmap dereferencing, fixes #7183, #7180
-- [#7013](https://github.com/influxdata/influxdb/issues/7013): Fix the dollar sign so it properly handles reserved keywords.
-- [#7297](https://github.com/influxdata/influxdb/issues/7297): Use consistent column output from the CLI for column formatted responses.
-- [#7231](https://github.com/influxdata/influxdb/issues/7231): Duplicate parsing bug in ALTER RETENTION POLICY.
-- [#7285](https://github.com/influxdata/influxdb/issues/7285): Correctly use password-type field in Admin UI. Thanks @dandv!
-- [#2792](https://github.com/influxdata/influxdb/issues/2792): Exceeding max retention policy duration gives incorrect error message
-- [#7226](https://github.com/influxdata/influxdb/issues/7226): Fix database locked up when deleting shards
-- [#7382](https://github.com/influxdata/influxdb/issues/7382): Shard stats include wal path tag so disk bytes make more sense.
+- [#7150](https://github.com/influxdata/influxdb/issues/7150): Do not automatically reset the shard duration when using ALTER RETENTION POLICY
+- [#5878](https://github.com/influxdata/influxdb/issues/5878): Ensure correct shard groups created when retention policy has been altered.
+- [#7391](https://github.com/influxdata/influxdb/issues/7391): Fix RLE integer decoding producing negative numbers
+- [#7335](https://github.com/influxdata/influxdb/pull/7335): Avoid stat syscall when planning compactions
+- [#7330](https://github.com/influxdata/influxdb/issues/7330): Subscription data loss under high write load
 
 ## v1.0.1 [2016-09-26]
 
@@ -42,7 +21,7 @@
 - [#7226](https://github.com/influxdata/influxdb/issues/7226): Fix database locked up when deleting shards
 - [#7315](https://github.com/influxdata/influxdb/issues/7315): Prevent users from manually using system queries since incorrect use would result in a panic.
 
-## v1.0.0 [2016-09-08]
+## v1.0.0 [2016-09-07]
 
 ### Release Notes
 
@@ -93,7 +72,7 @@ With this release the systemd configuration files for InfluxDB will use the syst
 - [#7011](https://github.com/influxdata/influxdb/issues/7011): Create man pages for commands.
 - [#7050](https://github.com/influxdata/influxdb/pull/7050): Update go package library dependencies.
 - [#5750](https://github.com/influxdata/influxdb/issues/5750): Support wildcards in aggregate functions.
-- [#7065](https://github.com/influxdata/influxdb/issues/7065): Remove IF EXISTS/IF NOT EXISTS from influxql language.
+- [#7605](https://github.com/influxdata/influxdb/issues/7605): Remove IF EXISTS/IF NOT EXISTS from influxql language.
 - [#7095](https://github.com/influxdata/influxdb/pull/7095): Add MaxSeriesPerDatabase config setting.
 - [#7199](https://github.com/influxdata/influxdb/pull/7199): Add mode function. Thanks @agaurav.
 - [#7194](https://github.com/influxdata/influxdb/issues/7194): Support negative timestamps for the query engine.
@@ -170,7 +149,6 @@ With this release the systemd configuration files for InfluxDB will use the syst
 - [#7025](https://github.com/influxdata/influxdb/issues/7025): Move the CQ interval by the group by offset.
 - [#7125](https://github.com/influxdata/influxdb/pull/7125): Ensure gzip writer is closed in influx_inspect export
 - [#7127](https://github.com/influxdata/influxdb/pull/7127): Concurrent series limit
-- [#7119](https://github.com/influxdata/influxdb/pull/7119): Fix CREATE DATABASE when dealing with default values.
 - [#7218](https://github.com/influxdata/influxdb/issues/7218): Fix alter retention policy when all options are used.
 - [#7225](https://github.com/influxdata/influxdb/issues/7225): runtime: goroutine stack exceeds 1000000000-byte limit
 - [#7240](https://github.com/influxdata/influxdb/issues/7240): Allow blank lines in the line protocol input.
@@ -550,7 +528,7 @@ There are breaking changes in this release:
   - Scripts are now located in `/usr/lib/influxdb/scripts` (previously `/opt/influxdb`)
 
 ### Features
-- [#4702](https://github.com/influxdata/influxdb/pull/4702): Support 'history' command at CLI
+- [#4098](https://github.com/influxdata/influxdb/pull/4702): Support 'history' command at CLI
 - [#4098](https://github.com/influxdata/influxdb/issues/4098): Enable `golint` on the code base - uuid subpackage
 - [#4141](https://github.com/influxdata/influxdb/pull/4141): Control whether each query should be logged
 - [#4065](https://github.com/influxdata/influxdb/pull/4065): Added precision support in cmd client. Thanks @sbouchex

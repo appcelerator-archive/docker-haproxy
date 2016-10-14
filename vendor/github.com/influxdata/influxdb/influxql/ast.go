@@ -1920,6 +1920,71 @@ func (s *SelectStatement) rewriteWithoutTimeDimensions() string {
 	return n.String()
 }
 
+/*
+
+BinaryExpr
+
+SELECT mean(xxx.value) + avg(yyy.value) FROM xxx JOIN yyy WHERE xxx.host = 123
+
+from xxx where host = 123
+select avg(value) from yyy where host = 123
+
+SELECT xxx.value FROM xxx WHERE xxx.host = 123
+SELECT yyy.value FROM yyy
+
+---
+
+SELECT MEAN(xxx.value) + MEAN(cpu.load.value)
+FROM xxx JOIN yyy
+GROUP BY host
+WHERE (xxx.region == "uswest" OR yyy.region == "uswest") AND xxx.otherfield == "XXX"
+
+select * from (
+	select mean + mean from xxx join yyy
+	group by time(5m), host
+) (xxx.region == "uswest" OR yyy.region == "uswest") AND xxx.otherfield == "XXX"
+
+(seriesIDS for xxx.region = 'uswest' union seriesIDs for yyy.regnion = 'uswest') | seriesIDS xxx.otherfield = 'XXX'
+
+WHERE xxx.region == "uswest" AND xxx.otherfield == "XXX"
+WHERE yyy.region == "uswest"
+
+
+*/
+
+// Substatement returns a single-series statement for a given variable reference.
+func (s *SelectStatement) Substatement(ref *VarRef) (*SelectStatement, error) {
+	// Copy dimensions and properties to new statement.
+	other := &SelectStatement{
+		Fields:     Fields{{Expr: ref}},
+		Dimensions: s.Dimensions,
+		Limit:      s.Limit,
+		Offset:     s.Offset,
+		SortFields: s.SortFields,
+	}
+
+	// If there is only one series source then return it with the whole condition.
+	if len(s.Sources) == 1 {
+		other.Sources = s.Sources
+		other.Condition = s.Condition
+		return other, nil
+	}
+
+	// Find the matching source.
+	name := MatchSource(s.Sources, ref.Val)
+	if name == "" {
+		return nil, fmt.Errorf("field source not found: %s", ref.Val)
+	}
+	other.Sources = append(other.Sources, &Measurement{Name: name})
+
+	// Filter out conditions.
+	if s.Condition != nil {
+		other.Condition = filterExprBySource(name, s.Condition)
+	}
+
+	return other, nil
+}
+
 // NamesInWhere returns the field and tag names (idents) referenced in the where clause
 func (s *SelectStatement) NamesInWhere() []string {
 	var a []string
@@ -2179,10 +2244,6 @@ func (s *DeleteStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
 
 // ShowSeriesStatement represents a command for listing series in the database.
 type ShowSeriesStatement struct {
-	// Database to query. If blank, use the default database.
-	// The database can also be specified per source in the Sources.
-	Database string
-
 	// Measurement(s) the series are listed for.
 	Sources Sources
 
@@ -2205,10 +2266,6 @@ func (s *ShowSeriesStatement) String() string {
 	var buf bytes.Buffer
 	_, _ = buf.WriteString("SHOW SERIES")
 
-	if s.Database != "" {
-		_, _ = buf.WriteString(" ON ")
-		_, _ = buf.WriteString(QuoteIdent(s.Database))
-	}
 	if s.Sources != nil {
 		_, _ = buf.WriteString(" FROM ")
 		_, _ = buf.WriteString(s.Sources.String())
@@ -2460,9 +2517,6 @@ func (s *DropContinuousQueryStatement) RequiredPrivileges() (ExecutionPrivileges
 
 // ShowMeasurementsStatement represents a command for listing measurements.
 type ShowMeasurementsStatement struct {
-	// Database to query. If blank, use the default database.
-	Database string
-
 	// Measurement name or regex.
 	Source Source
 
@@ -2485,10 +2539,6 @@ func (s *ShowMeasurementsStatement) String() string {
 	var buf bytes.Buffer
 	_, _ = buf.WriteString("SHOW MEASUREMENTS")
 
-	if s.Database != "" {
-		_, _ = buf.WriteString(" ON ")
-		_, _ = buf.WriteString(s.Database)
-	}
 	if s.Source != nil {
 		_, _ = buf.WriteString(" WITH MEASUREMENT ")
 		if m, ok := s.Source.(*Measurement); ok && m.Regex != nil {
@@ -2563,11 +2613,8 @@ type ShowRetentionPoliciesStatement struct {
 // String returns a string representation of a ShowRetentionPoliciesStatement.
 func (s *ShowRetentionPoliciesStatement) String() string {
 	var buf bytes.Buffer
-	_, _ = buf.WriteString("SHOW RETENTION POLICIES")
-	if s.Database != "" {
-		_, _ = buf.WriteString(" ON ")
-		_, _ = buf.WriteString(QuoteIdent(s.Database))
-	}
+	_, _ = buf.WriteString("SHOW RETENTION POLICIES ON ")
+	_, _ = buf.WriteString(QuoteIdent(s.Database))
 	return buf.String()
 }
 
@@ -2585,10 +2632,10 @@ type ShowStatsStatement struct {
 // String returns a string representation of a ShowStatsStatement.
 func (s *ShowStatsStatement) String() string {
 	var buf bytes.Buffer
-	_, _ = buf.WriteString("SHOW STATS")
+	_, _ = buf.WriteString("SHOW STATS ")
 	if s.Module != "" {
-		_, _ = buf.WriteString(" FOR ")
-		_, _ = buf.WriteString(QuoteString(s.Module))
+		_, _ = buf.WriteString("FOR ")
+		_, _ = buf.WriteString(s.Module)
 	}
 	return buf.String()
 }
@@ -2629,10 +2676,10 @@ type ShowDiagnosticsStatement struct {
 // String returns a string representation of the ShowDiagnosticsStatement.
 func (s *ShowDiagnosticsStatement) String() string {
 	var buf bytes.Buffer
-	_, _ = buf.WriteString("SHOW DIAGNOSTICS")
+	_, _ = buf.WriteString("SHOW DIAGNOSTICS ")
 	if s.Module != "" {
-		_, _ = buf.WriteString(" FOR ")
-		_, _ = buf.WriteString(QuoteString(s.Module))
+		_, _ = buf.WriteString("FOR ")
+		_, _ = buf.WriteString(s.Module)
 	}
 	return buf.String()
 }
@@ -2711,10 +2758,6 @@ func (s *ShowSubscriptionsStatement) RequiredPrivileges() (ExecutionPrivileges, 
 
 // ShowTagKeysStatement represents a command for listing tag keys.
 type ShowTagKeysStatement struct {
-	// Database to query. If blank, use the default database.
-	// The database can also be specified per source in the Sources.
-	Database string
-
 	// Data sources that fields are extracted from.
 	Sources Sources
 
@@ -2742,10 +2785,6 @@ func (s *ShowTagKeysStatement) String() string {
 	var buf bytes.Buffer
 	_, _ = buf.WriteString("SHOW TAG KEYS")
 
-	if s.Database != "" {
-		_, _ = buf.WriteString(" ON ")
-		_, _ = buf.WriteString(QuoteIdent(s.Database))
-	}
 	if s.Sources != nil {
 		_, _ = buf.WriteString(" FROM ")
 		_, _ = buf.WriteString(s.Sources.String())
@@ -2784,10 +2823,6 @@ func (s *ShowTagKeysStatement) RequiredPrivileges() (ExecutionPrivileges, error)
 
 // ShowTagValuesStatement represents a command for listing tag values.
 type ShowTagValuesStatement struct {
-	// Database to query. If blank, use the default database.
-	// The database can also be specified per source in the Sources.
-	Database string
-
 	// Data source that fields are extracted from.
 	Sources Sources
 
@@ -2816,10 +2851,6 @@ func (s *ShowTagValuesStatement) String() string {
 	var buf bytes.Buffer
 	_, _ = buf.WriteString("SHOW TAG VALUES")
 
-	if s.Database != "" {
-		_, _ = buf.WriteString(" ON ")
-		_, _ = buf.WriteString(QuoteIdent(s.Database))
-	}
 	if s.Sources != nil {
 		_, _ = buf.WriteString(" FROM ")
 		_, _ = buf.WriteString(s.Sources.String())
@@ -2827,11 +2858,7 @@ func (s *ShowTagValuesStatement) String() string {
 	_, _ = buf.WriteString(" WITH KEY ")
 	_, _ = buf.WriteString(s.Op.String())
 	_, _ = buf.WriteString(" ")
-	if lit, ok := s.TagKeyExpr.(*StringLiteral); ok {
-		_, _ = buf.WriteString(QuoteIdent(lit.Val))
-	} else {
-		_, _ = buf.WriteString(s.TagKeyExpr.String())
-	}
+	_, _ = buf.WriteString(s.TagKeyExpr.String())
 	if s.Condition != nil {
 		_, _ = buf.WriteString(" WHERE ")
 		_, _ = buf.WriteString(s.Condition.String())
@@ -2871,10 +2898,6 @@ func (s *ShowUsersStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
 
 // ShowFieldKeysStatement represents a command for listing field keys.
 type ShowFieldKeysStatement struct {
-	// Database to query. If blank, use the default database.
-	// The database can also be specified per source in the Sources.
-	Database string
-
 	// Data sources that fields are extracted from.
 	Sources Sources
 
@@ -2894,10 +2917,6 @@ func (s *ShowFieldKeysStatement) String() string {
 	var buf bytes.Buffer
 	_, _ = buf.WriteString("SHOW FIELD KEYS")
 
-	if s.Database != "" {
-		_, _ = buf.WriteString(" ON ")
-		_, _ = buf.WriteString(QuoteIdent(s.Database))
-	}
 	if s.Sources != nil {
 		_, _ = buf.WriteString(" FROM ")
 		_, _ = buf.WriteString(s.Sources.String())

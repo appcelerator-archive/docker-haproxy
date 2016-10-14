@@ -53,27 +53,15 @@ const (
 type TimeEncoder interface {
 	Write(t int64)
 	Bytes() ([]byte, error)
-	Reset()
 }
 
 type encoder struct {
-	ts    []uint64
-	bytes []byte
-	enc   *simple8b.Encoder
+	ts []uint64
 }
 
 // NewTimeEncoder returns a TimeEncoder
-func NewTimeEncoder(sz int) TimeEncoder {
-	return &encoder{
-		ts:  make([]uint64, 0, sz),
-		enc: simple8b.NewEncoder(),
-	}
-}
-
-func (e *encoder) Reset() {
-	e.ts = e.ts[:0]
-	e.bytes = e.bytes[:0]
-	e.enc.Reset()
+func NewTimeEncoder() TimeEncoder {
+	return &encoder{}
 }
 
 // Write adds a time.Time to the compressed stream.
@@ -120,7 +108,7 @@ func (e *encoder) reduce() (max, divisor uint64, rle bool, deltas []uint64) {
 // Bytes returns the encoded bytes of all written times.
 func (e *encoder) Bytes() ([]byte, error) {
 	if len(e.ts) == 0 {
-		return e.bytes[:0], nil
+		return []byte{}, nil
 	}
 
 	// Maximum and largest common divisor.  rle is true if dts (the delta timestamps),
@@ -141,21 +129,12 @@ func (e *encoder) Bytes() ([]byte, error) {
 }
 
 func (e *encoder) encodePacked(div uint64, dts []uint64) ([]byte, error) {
+	enc := simple8b.NewEncoder()
 	for _, v := range dts[1:] {
-		e.enc.Write(uint64(v) / div)
+		enc.Write(uint64(v) / div)
 	}
 
-	// The compressed deltas
-	deltas, err := e.enc.Bytes()
-	if err != nil {
-		return nil, err
-	}
-
-	sz := 8 + 1 + len(deltas)
-	if cap(e.bytes) < sz {
-		e.bytes = make([]byte, sz)
-	}
-	b := e.bytes[:sz]
+	b := make([]byte, 8+1)
 
 	// 4 high bits used for the encoding type
 	b[0] = byte(timeCompressedPackedSimple) << 4
@@ -165,16 +144,17 @@ func (e *encoder) encodePacked(div uint64, dts []uint64) ([]byte, error) {
 	// The first delta value
 	binary.BigEndian.PutUint64(b[1:9], uint64(dts[0]))
 
-	copy(b[9:], deltas)
-	return b[:9+len(deltas)], nil
+	// The compressed deltas
+	deltas, err := enc.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	return append(b, deltas...), nil
 }
 
 func (e *encoder) encodeRaw() ([]byte, error) {
-	sz := 1 + len(e.ts)*8
-	if cap(e.bytes) < sz {
-		e.bytes = make([]byte, sz)
-	}
-	b := e.bytes[:sz]
+	b := make([]byte, 1+len(e.ts)*8)
 	b[0] = byte(timeUncompressed) << 4
 	for i, v := range e.ts {
 		binary.BigEndian.PutUint64(b[1+i*8:1+i*8+8], uint64(v))
@@ -183,12 +163,9 @@ func (e *encoder) encodeRaw() ([]byte, error) {
 }
 
 func (e *encoder) encodeRLE(first, delta, div uint64, n int) ([]byte, error) {
-	// Large varints can take up to 10 bytes, we're encoding 3 + 1 byte type
-	sz := 31
-	if cap(e.bytes) < sz {
-		e.bytes = make([]byte, sz)
-	}
-	b := e.bytes[:sz]
+	// Large varints can take up to 10 bytes
+	b := make([]byte, 1+10*3)
+
 	// 4 high bits used for the encoding type
 	b[0] = byte(timeCompressedRLE) << 4
 	// 4 low bits are the log10 divisor

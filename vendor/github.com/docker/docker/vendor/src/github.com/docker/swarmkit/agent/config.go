@@ -1,11 +1,12 @@
 package agent
 
 import (
+	"fmt"
+
 	"github.com/boltdb/bolt"
 	"github.com/docker/swarmkit/agent/exec"
 	"github.com/docker/swarmkit/api"
 	"github.com/docker/swarmkit/remotes"
-	"github.com/pkg/errors"
 	"google.golang.org/grpc/credentials"
 )
 
@@ -28,20 +29,20 @@ type Config struct {
 	NotifyRoleChange chan<- api.NodeRole
 
 	// Credentials is credentials for grpc connection to manager.
-	Credentials credentials.TransportCredentials
+	Credentials credentials.TransportAuthenticator
 }
 
 func (c *Config) validate() error {
 	if c.Credentials == nil {
-		return errors.New("agent: Credentials is required")
+		return fmt.Errorf("agent: Credentials is required")
 	}
 
 	if c.Executor == nil {
-		return errors.New("agent: executor required")
+		return fmt.Errorf("agent: executor required")
 	}
 
 	if c.DB == nil {
-		return errors.New("agent: database required")
+		return fmt.Errorf("agent: database required")
 	}
 
 	return nil

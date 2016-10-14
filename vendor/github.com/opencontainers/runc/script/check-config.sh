@@ -10,12 +10,13 @@ possibleConfigs=(
 	"/usr/src/linux-$(uname -r)/.config"
 	'/usr/src/linux/.config'
 )
-possibleConfigFiles=(
-	'config.gz'
-	"config-$(uname -r)"
-	'.config'
-)
-	
+
+if [ $# -gt 0 ]; then
+	CONFIG="$1"
+else
+	: ${CONFIG:="${possibleConfigs[0]}"}
+fi
+
 if ! command -v zgrep &> /dev/null; then
 	zgrep() {
 		zcat "$2" | grep "$1"
@@ -109,56 +110,21 @@ check_distro_userns() {
 	fi
 }
 
-is_config()
-{
-	local config="$1"
-
-	# Todo: more check
-	[[ -f "$config" ]] && return 0
-	return 1
-}
-
-search_config()
-{
-	local target_dir="$1"
-	[[ "$target_dir" ]] || target_dir=("${possibleConfigs[@]}")
-
-	local tryConfig
-	for tryConfig in "${target_dir[@]}"; do
-		is_config "$tryConfig" && {
+if [ ! -e "$CONFIG" ]; then
+	wrap_warning "warning: $CONFIG does not exist, searching other paths for kernel config ..."
+	for tryConfig in "${possibleConfigs[@]}"; do
+		if [ -e "$tryConfig" ]; then
 			CONFIG="$tryConfig"
-			return
-		}
-		[[ -d "$tryConfig" ]] && {
-			for tryFile in "${possibleConfigFiles[@]}"; do
-				is_config "$tryConfig/$tryFile" && {
-					CONFIG="$tryConfig/$tryFile"
-					return
-				}
-			done
-		}
+			break
+		fi
 	done
-
-	wrap_warning "error: cannot find kernel config"
-	wrap_warning "  try running this script again, specifying the kernel config:"
-	wrap_warning "    CONFIG=/path/to/kernel/.config $0 or $0 /path/to/kernel/.config"
-	exit 1
-}
-
-CONFIG="$1"
-
-is_config "$CONFIG" || {
-	if [[ ! "$CONFIG" ]]; then
-		wrap_color "info: no config specified, searching for kernel config ..." white
-		search_config
-	elif [[ -d "$CONFIG" ]]; then
-		wrap_color "info: input is a directory, searching for kernel config in this directory..." white
-		search_config "$CONFIG"
-	else
-		wrap_warning "warning: $CONFIG seems not a kernel config, searching other paths for kernel config ..."
-		search_config
+	if [ ! -e "$CONFIG" ]; then
+		wrap_warning "error: cannot find kernel config"
+		wrap_warning "  try running this script again, specifying the kernel config:"
+		wrap_warning "    CONFIG=/path/to/kernel/.config $0 or $0 /path/to/kernel/.config"
+		exit 1
 	fi
-}
+fi
 
 wrap_color "info: reading kernel config from $CONFIG ..." white
 echo
