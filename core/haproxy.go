@@ -34,20 +34,18 @@ var (
 )
 
 //Set app mate initial values
-func (app *HAProxy) init(args []string) {
+func (app *HAProxy) init() {
 	app.isLoadingConf = false
 	app.loadTry = 0
-	for _, arg := range args {
-		if arg == "disableBackends" {
-			fmt.Println("Default backends are disabled by request")
-			err := app.disableDefaultBackends("/usr/local/etc/haproxy/haproxy.cfg")
-			if err != nil {
-				log.Fatalf("Failed to disable backends in %s: %v\n", "/usr/local/etc/haproxy/haproxy.cfg", err)
-			}
-			err = app.disableDefaultBackends("/usr/local/etc/haproxy/haproxy-main.cfg.tpt")
-			if err != nil {
-				log.Fatalf("Failed to disable backends in %s: %v\n", "/usr/local/etc/haproxy/haproxy-main.cfg.tpt", err)
-			}
+	if conf.noDefaultBackend {
+		fmt.Println("Default backends are disabled by request")
+		err := app.disableDefaultBackends("/usr/local/etc/haproxy/haproxy.cfg")
+		if err != nil {
+			log.Fatalf("Failed to disable backends in %s: %v\n", "/usr/local/etc/haproxy/haproxy.cfg", err)
+		}
+		err = app.disableDefaultBackends("/usr/local/etc/haproxy/haproxy-main.cfg.tpt")
+		if err != nil {
+			log.Fatalf("Failed to disable backends in %s: %v\n", "/usr/local/etc/haproxy/haproxy-main.cfg.tpt", err)
 		}
 	}
 }
