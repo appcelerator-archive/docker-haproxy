@@ -13,7 +13,7 @@ import (
 func NewVolumeCommand(dockerCli *command.DockerCli) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "volume COMMAND",
-		Short: "Manage volumes",
+		Short: "Manage Docker volumes",
 		Long:  volumeDescription,
 		Args:  cli.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {

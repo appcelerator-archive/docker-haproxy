@@ -57,29 +57,27 @@ func (r *request) decode(pd packetDecoder) (err error) {
 	return r.body.decode(pd, version)
 }
 
-func decodeRequest(r io.Reader) (req *request, bytesRead int, err error) {
+func decodeRequest(r io.Reader) (req *request, err error) {
 	lengthBytes := make([]byte, 4)
 	if _, err := io.ReadFull(r, lengthBytes); err != nil {
-		return nil, bytesRead, err
+		return nil, err
 	}
-	bytesRead += len(lengthBytes)
 
 	length := int32(binary.BigEndian.Uint32(lengthBytes))
 	if length <= 4 || length > MaxRequestSize {
-		return nil, bytesRead, PacketDecodingError{fmt.Sprintf("message of length %d too large or too small", length)}
+		return nil, PacketDecodingError{fmt.Sprintf("message of length %d too large or too small", length)}
 	}
 
 	encodedReq := make([]byte, length)
 	if _, err := io.ReadFull(r, encodedReq); err != nil {
-		return nil, bytesRead, err
+		return nil, err
 	}
-	bytesRead += len(encodedReq)
 
 	req = &request{}
 	if err := decode(encodedReq, req); err != nil {
-		return nil, bytesRead, err
+		return nil, err
 	}
-	return req, bytesRead, nil
+	return req, nil
 }
 
 func allocateBody(key, version int16) protocolBody {

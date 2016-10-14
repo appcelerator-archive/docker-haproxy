@@ -3,6 +3,7 @@ package container
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -10,23 +11,32 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/cli/command/formatter"
 	"github.com/docker/docker/client"
+	"github.com/docker/go-units"
 	"golang.org/x/net/context"
 )
 
-type stats struct {
-	ostype string
-	mu     sync.RWMutex
-	cs     []*formatter.ContainerStats
+type containerStats struct {
+	Name             string
+	CPUPercentage    float64
+	Memory           float64
+	MemoryLimit      float64
+	MemoryPercentage float64
+	NetworkRx        float64
+	NetworkTx        float64
+	BlockRead        float64
+	BlockWrite       float64
+	PidsCurrent      uint64
+	mu               sync.Mutex
+	err              error
 }
 
-// daemonOSType is set once we have at least one stat for a container
-// from the daemon. It is used to ensure we print the right header based
-// on the daemon platform.
-var daemonOSType string
+type stats struct {
+	mu sync.Mutex
+	cs []*containerStats
+}
 
-func (s *stats) add(cs *formatter.ContainerStats) bool {
+func (s *stats) add(cs *containerStats) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, exists := s.isKnownContainer(cs.Name); !exists {
@@ -53,7 +63,7 @@ func (s *stats) isKnownContainer(cid string) (int, bool) {
 	return -1, false
 }
 
-func collect(s *formatter.ContainerStats, ctx context.Context, cli client.APIClient, streamStats bool, waitFirst *sync.WaitGroup) {
+func (s *containerStats) Collect(ctx context.Context, cli client.APIClient, streamStats bool, waitFirst *sync.WaitGroup) {
 	logrus.Debugf("collecting stats for %s", s.Name)
 	var (
 		getFirst       bool
@@ -70,28 +80,22 @@ func collect(s *formatter.ContainerStats, ctx context.Context, cli client.APICli
 		}
 	}()
 
-	response, err := cli.ContainerStats(ctx, s.Name, streamStats)
+	responseBody, err := cli.ContainerStats(ctx, s.Name, streamStats)
 	if err != nil {
-		s.Mu.Lock()
-		s.Err = err
-		s.Mu.Unlock()
+		s.mu.Lock()
+		s.err = err
+		s.mu.Unlock()
 		return
 	}
-	defer response.Body.Close()
+	defer responseBody.Close()
 
-	dec := json.NewDecoder(response.Body)
+	dec := json.NewDecoder(responseBody)
 	go func() {
 		for {
-			var (
-				v                 *types.StatsJSON
-				memPercent        = 0.0
-				cpuPercent        = 0.0
-				blkRead, blkWrite uint64 // Only used on Linux
-				mem               = 0.0
-			)
+			var v *types.StatsJSON
 
 			if err := dec.Decode(&v); err != nil {
-				dec = json.NewDecoder(io.MultiReader(dec.Buffered(), response.Body))
+				dec = json.NewDecoder(io.MultiReader(dec.Buffered(), responseBody))
 				u <- err
 				if err == io.EOF {
 					break
@@ -100,39 +104,29 @@ func collect(s *formatter.ContainerStats, ctx context.Context, cli client.APICli
 				continue
 			}
 
-			daemonOSType = response.OSType
+			var memPercent = 0.0
+			var cpuPercent = 0.0
 
-			if daemonOSType != "windows" {
-				// MemoryStats.Limit will never be 0 unless the container is not running and we haven't
-				// got any data from cgroup
-				if v.MemoryStats.Limit != 0 {
-					memPercent = float64(v.MemoryStats.Usage) / float64(v.MemoryStats.Limit) * 100.0
-				}
-				previousCPU = v.PreCPUStats.CPUUsage.TotalUsage
-				previousSystem = v.PreCPUStats.SystemUsage
-				cpuPercent = calculateCPUPercentUnix(previousCPU, previousSystem, v)
-				blkRead, blkWrite = calculateBlockIO(v.BlkioStats)
-				mem = float64(v.MemoryStats.Usage)
-
-			} else {
-				cpuPercent = calculateCPUPercentWindows(v)
-				blkRead = v.StorageStats.ReadSizeBytes
-				blkWrite = v.StorageStats.WriteSizeBytes
-				mem = float64(v.MemoryStats.PrivateWorkingSet)
+			// MemoryStats.Limit will never be 0 unless the container is not running and we haven't
+			// got any data from cgroup
+			if v.MemoryStats.Limit != 0 {
+				memPercent = float64(v.MemoryStats.Usage) / float64(v.MemoryStats.Limit) * 100.0
 			}
 
-			s.Mu.Lock()
+			previousCPU = v.PreCPUStats.CPUUsage.TotalUsage
+			previousSystem = v.PreCPUStats.SystemUsage
+			cpuPercent = calculateCPUPercent(previousCPU, previousSystem, v)
+			blkRead, blkWrite := calculateBlockIO(v.BlkioStats)
+			s.mu.Lock()
 			s.CPUPercentage = cpuPercent
-			s.Memory = mem
+			s.Memory = float64(v.MemoryStats.Usage)
+			s.MemoryLimit = float64(v.MemoryStats.Limit)
+			s.MemoryPercentage = memPercent
 			s.NetworkRx, s.NetworkTx = calculateNetwork(v.Networks)
 			s.BlockRead = float64(blkRead)
 			s.BlockWrite = float64(blkWrite)
-			if daemonOSType != "windows" {
-				s.MemoryLimit = float64(v.MemoryStats.Limit)
-				s.MemoryPercentage = memPercent
-				s.PidsCurrent = v.PidsStats.Current
-			}
-			s.Mu.Unlock()
+			s.PidsCurrent = v.PidsStats.Current
+			s.mu.Unlock()
 			u <- nil
 			if !streamStats {
 				return
@@ -144,7 +138,7 @@ func collect(s *formatter.ContainerStats, ctx context.Context, cli client.APICli
 		case <-time.After(2 * time.Second):
 			// zero out the values if we have not received an update within
 			// the specified duration.
-			s.Mu.Lock()
+			s.mu.Lock()
 			s.CPUPercentage = 0
 			s.Memory = 0
 			s.MemoryPercentage = 0
@@ -154,8 +148,8 @@ func collect(s *formatter.ContainerStats, ctx context.Context, cli client.APICli
 			s.BlockRead = 0
 			s.BlockWrite = 0
 			s.PidsCurrent = 0
-			s.Err = errors.New("timeout waiting for stats")
-			s.Mu.Unlock()
+			s.err = errors.New("timeout waiting for stats")
+			s.mu.Unlock()
 			// if this is the first stat you get, release WaitGroup
 			if !getFirst {
 				getFirst = true
@@ -163,12 +157,12 @@ func collect(s *formatter.ContainerStats, ctx context.Context, cli client.APICli
 			}
 		case err := <-u:
 			if err != nil {
-				s.Mu.Lock()
-				s.Err = err
-				s.Mu.Unlock()
+				s.mu.Lock()
+				s.err = err
+				s.mu.Unlock()
 				continue
 			}
-			s.Err = nil
+			s.err = nil
 			// if this is the first stat you get, release WaitGroup
 			if !getFirst {
 				getFirst = true
@@ -181,7 +175,32 @@ func collect(s *formatter.ContainerStats, ctx context.Context, cli client.APICli
 	}
 }
 
-func calculateCPUPercentUnix(previousCPU, previousSystem uint64, v *types.StatsJSON) float64 {
+func (s *containerStats) Display(w io.Writer) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// NOTE: if you change this format, you must also change the err format below!
+	format := "%s\t%.2f%%\t%s / %s\t%.2f%%\t%s / %s\t%s / %s\t%d\n"
+	if s.err != nil {
+		format = "%s\t%s\t%s / %s\t%s\t%s / %s\t%s / %s\t%s\n"
+		errStr := "--"
+		fmt.Fprintf(w, format,
+			s.Name, errStr, errStr, errStr, errStr, errStr, errStr, errStr, errStr, errStr,
+		)
+		err := s.err
+		return err
+	}
+	fmt.Fprintf(w, format,
+		s.Name,
+		s.CPUPercentage,
+		units.BytesSize(s.Memory), units.BytesSize(s.MemoryLimit),
+		s.MemoryPercentage,
+		units.HumanSizeWithPrecision(s.NetworkRx, 3), units.HumanSizeWithPrecision(s.NetworkTx, 3),
+		units.HumanSizeWithPrecision(s.BlockRead, 3), units.HumanSizeWithPrecision(s.BlockWrite, 3),
+		s.PidsCurrent)
+	return nil
+}
+
+func calculateCPUPercent(previousCPU, previousSystem uint64, v *types.StatsJSON) float64 {
 	var (
 		cpuPercent = 0.0
 		// calculate the change for the cpu usage of the container in between readings
@@ -194,22 +213,6 @@ func calculateCPUPercentUnix(previousCPU, previousSystem uint64, v *types.StatsJ
 		cpuPercent = (cpuDelta / systemDelta) * float64(len(v.CPUStats.CPUUsage.PercpuUsage)) * 100.0
 	}
 	return cpuPercent
-}
-
-func calculateCPUPercentWindows(v *types.StatsJSON) float64 {
-	// Max number of 100ns intervals between the previous time read and now
-	possIntervals := uint64(v.Read.Sub(v.PreRead).Nanoseconds()) // Start with number of ns intervals
-	possIntervals /= 100                                         // Convert to number of 100ns intervals
-	possIntervals *= uint64(v.NumProcs)                          // Multiple by the number of processors
-
-	// Intervals used
-	intervalsUsed := v.CPUStats.CPUUsage.TotalUsage - v.PreCPUStats.CPUUsage.TotalUsage
-
-	// Percentage avoiding divide-by-zero
-	if possIntervals > 0 {
-		return float64(intervalsUsed) / float64(possIntervals) * 100.0
-	}
-	return 0.00
 }
 
 func calculateBlockIO(blkio types.BlkioStats) (blkRead uint64, blkWrite uint64) {

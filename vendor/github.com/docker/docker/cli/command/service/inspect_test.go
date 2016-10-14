@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/cli/command/formatter"
 )
 
 func TestPrettyPrintWithNoUpdateConfig(t *testing.T) {
@@ -78,18 +77,7 @@ func TestPrettyPrintWithNoUpdateConfig(t *testing.T) {
 		},
 	}
 
-	ctx := formatter.Context{
-		Output: b,
-		Format: formatter.NewServiceFormat("pretty"),
-	}
-
-	err := formatter.ServiceInspectWrite(ctx, []string{"de179gar9d0o7ltdybungplod"}, func(ref string) (interface{}, []byte, error) {
-		return s, nil, nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	printService(b, s)
 	if strings.Contains(b.String(), "UpdateStatus") {
 		t.Fatal("Pretty print failed before parsing UpdateStatus")
 	}

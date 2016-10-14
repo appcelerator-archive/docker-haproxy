@@ -330,7 +330,7 @@ func TestServer_UserCommands(t *testing.T) {
 			&Query{
 				name:    "bad create user request",
 				command: `CREATE USER 0xBAD WITH PASSWORD pwd1337`,
-				exp:     `{"error":"error parsing query: found 0xBAD, expected identifier at line 1, char 13"}`,
+				exp:     `{"error":"error parsing query: found 0, expected identifier at line 1, char 13"}`,
 			},
 			&Query{
 				name:    "bad create user request, no name",
@@ -527,7 +527,7 @@ func TestServer_Query_DefaultDBAndRP(t *testing.T) {
 		&Query{
 			name:    "default rp exists",
 			command: `show retention policies ON db0`,
-			exp:     `{"results":[{"series":[{"columns":["name","duration","shardGroupDuration","replicaN","default"],"values":[["autogen","0s","168h0m0s",1,false],["rp0","0s","168h0m0s",1,true]]}]}]}`,
+			exp:     `{"results":[{"series":[{"columns":["name","duration","shardGroupDuration","replicaN","default"],"values":[["autogen","0","168h0m0s",1,false],["rp0","0","168h0m0s",1,true]]}]}]}`,
 		},
 		&Query{
 			name:    "default rp",
@@ -5587,50 +5587,6 @@ func TestServer_Query_ShowSeries(t *testing.T) {
 			command: "SHOW SERIES WHERE value > 10.0",
 			exp:     `{"results":[{"error":"invalid tag comparison operator"}]}`,
 			params:  url.Values{"db": []string{"db0"}},
-		},
-	}...)
-
-	for i, query := range test.queries {
-		if i == 0 {
-			if err := test.init(s); err != nil {
-				t.Fatalf("test init failed: %s", err)
-			}
-		}
-		if query.skip {
-			t.Logf("SKIP:: %s", query.name)
-			continue
-		}
-		if err := query.Execute(s); err != nil {
-			t.Error(query.Error(err))
-		} else if !query.success() {
-			t.Error(query.failureMessage())
-		}
-	}
-}
-
-func TestServer_Query_ShowStats(t *testing.T) {
-	t.Parallel()
-	s := OpenServer(NewConfig())
-	defer s.Close()
-
-	if err := s.CreateDatabaseAndRetentionPolicy("db0", newRetentionPolicySpec("rp0", 1, 0)); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.MetaClient.SetDefaultRetentionPolicy("db0", "rp0"); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := s.MetaClient.CreateSubscription("db0", "rp0", "foo", "ALL", []string{"udp://localhost:9000"}); err != nil {
-		t.Fatal(err)
-	}
-
-	test := NewTest("db0", "rp0")
-	test.addQueries([]*Query{
-		&Query{
-			name:    `show shots`,
-			command: "SHOW STATS",
-			exp:     "subscriber", // Should see a subscriber stat in the json
-			pattern: true,
 		},
 	}...)
 

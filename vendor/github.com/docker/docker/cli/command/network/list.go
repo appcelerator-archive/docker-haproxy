@@ -50,27 +50,35 @@ func newListCommand(dockerCli *command.DockerCli) *cobra.Command {
 
 func runList(dockerCli *command.DockerCli, opts listOptions) error {
 	client := dockerCli.Client()
+
 	options := types.NetworkListOptions{Filters: opts.filter.Value()}
 	networkResources, err := client.NetworkList(context.Background(), options)
 	if err != nil {
 		return err
 	}
 
-	format := opts.format
-	if len(format) == 0 {
+	f := opts.format
+	if len(f) == 0 {
 		if len(dockerCli.ConfigFile().NetworksFormat) > 0 && !opts.quiet {
-			format = dockerCli.ConfigFile().NetworksFormat
+			f = dockerCli.ConfigFile().NetworksFormat
 		} else {
-			format = formatter.TableFormatKey
+			f = "table"
 		}
 	}
 
 	sort.Sort(byNetworkName(networkResources))
 
-	networksCtx := formatter.Context{
-		Output: dockerCli.Out(),
-		Format: formatter.NewNetworkFormat(format, opts.quiet),
-		Trunc:  !opts.noTrunc,
+	networksCtx := formatter.NetworkContext{
+		Context: formatter.Context{
+			Output: dockerCli.Out(),
+			Format: f,
+			Quiet:  opts.quiet,
+			Trunc:  !opts.noTrunc,
+		},
+		Networks: networkResources,
 	}
-	return formatter.NetworkWrite(networksCtx, networkResources)
+
+	networksCtx.Write()
+
+	return nil
 }

@@ -94,7 +94,7 @@ func init() {
 	}
 }
 
-// ParseLine parses a line and returns the remainder.
+// ParseLine parse a line and return the remainder.
 func ParseLine(line string, d *Directive) (string, *Node, error) {
 	// Handle the parser directive '# escape=<char>. Parser directives must precede
 	// any builder instruction or other comments, and cannot be repeated.

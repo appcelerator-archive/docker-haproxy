@@ -28,7 +28,7 @@ func (s *checkpointRouter) postContainerCheckpoint(ctx context.Context, w http.R
 		return err
 	}
 
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 

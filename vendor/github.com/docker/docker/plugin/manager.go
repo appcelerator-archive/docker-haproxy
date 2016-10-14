@@ -35,7 +35,7 @@ type Manager struct {
 	sync.RWMutex
 	libRoot           string
 	runRoot           string
-	pluginStore       *store.Store
+	pluginStore       *store.PluginStore
 	containerdClient  libcontainerd.Client
 	registryService   registry.Service
 	liveRestore       bool
@@ -50,7 +50,7 @@ func GetManager() *Manager {
 
 // Init (was NewManager) instantiates the singleton Manager.
 // TODO: revert this to NewManager once we get rid of all the singletons.
-func Init(root string, ps *store.Store, remote libcontainerd.Remote, rs registry.Service, liveRestore bool, evL eventLogger) (err error) {
+func Init(root string, remote libcontainerd.Remote, rs registry.Service, liveRestore bool, evL eventLogger) (err error) {
 	if manager != nil {
 		return nil
 	}
@@ -59,7 +59,7 @@ func Init(root string, ps *store.Store, remote libcontainerd.Remote, rs registry
 	manager = &Manager{
 		libRoot:           root,
 		runRoot:           "/run/docker",
-		pluginStore:       ps,
+		pluginStore:       store.NewPluginStore(root),
 		registryService:   rs,
 		liveRestore:       liveRestore,
 		pluginEventLogger: evL,

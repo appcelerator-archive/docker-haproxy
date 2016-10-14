@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"sort"
 	"strconv"
@@ -74,21 +75,6 @@ type Point interface {
 	// is a timestamp associated with the point, then it will be rounded to the
 	// given duration
 	RoundedString(d time.Duration) string
-
-	// Split will attempt to return multiple points with the same timestamp whose
-	// string representations are no longer than size. Points with a single field or
-	// a point without a timestamp may exceed the requested size.
-	Split(size int) []Point
-
-	// Round will round the timestamp of the point to the given duration
-	Round(d time.Duration)
-
-	// StringSize returns the length of the string that would be returned by String()
-	StringSize() int
-
-	// AppendString appends the result of String() to the provided buffer and returns
-	// the result, potentially reducing string allocations
-	AppendString(buf []byte) []byte
 }
 
 // Points represents a sortable list of points by timestamp.
@@ -153,14 +139,14 @@ func ParsePointsString(buf string) ([]Point, error) {
 }
 
 // ParseKey returns the measurement name and tags from a point.
-func ParseKey(buf []byte) (string, Tags, error) {
+func ParseKey(buf string) (string, Tags, error) {
 	// Ignore the error because scanMeasurement returns "missing fields" which we ignore
 	// when just parsing a key
-	state, i, _ := scanMeasurement(buf, 0)
+	state, i, _ := scanMeasurement([]byte(buf), 0)
 
 	var tags Tags
 	if state == tagKeyState {
-		tags = parseTags(buf)
+		tags = parseTags([]byte(buf))
 		// scanMeasurement returns the location of the comma if there are tags, strip that off
 		return string(buf[:i-1]), tags, nil
 	}
@@ -170,7 +156,7 @@ func ParseKey(buf []byte) (string, Tags, error) {
 // ParsePointsWithPrecision is similar to ParsePoints, but allows the
 // caller to provide a precision for time.
 func ParsePointsWithPrecision(buf []byte, defaultTime time.Time, precision string) ([]Point, error) {
-	points := make([]Point, 0, bytes.Count(buf, []byte{'\n'})+1)
+	points := []Point{}
 	var (
 		pos    int
 		block  []byte
@@ -259,7 +245,7 @@ func parsePoint(buf []byte, defaultTime time.Time, precision string) (Point, err
 		pt.time = defaultTime
 		pt.SetPrecision(precision)
 	} else {
-		ts, err := ParseIntBytes(ts, 10, 64)
+		ts, err := strconv.ParseInt(string(ts), 10, 64)
 		if err != nil {
 			return nil, err
 		}
@@ -796,14 +782,14 @@ func scanNumber(buf []byte, i int) (int, error) {
 		// Parse the int to check bounds the number of digits could be larger than the max range
 		// We subtract 1 from the index to remove the `i` from our tests
 		if len(buf[start:i-1]) >= maxInt64Digits || len(buf[start:i-1]) >= minInt64Digits {
-			if _, err := ParseIntBytes(buf[start:i-1], 10, 64); err != nil {
+			if _, err := strconv.ParseInt(string(buf[start:i-1]), 10, 64); err != nil {
 				return i, fmt.Errorf("unable to parse integer %s: %s", buf[start:i-1], err)
 			}
 		}
 	} else {
 		// Parse the float to check bounds if it's scientific or the number of digits could be larger than the max range
 		if scientific || len(buf[start:i]) >= maxFloat64Digits || len(buf[start:i]) >= minFloat64Digits {
-			if _, err := ParseFloatBytes(buf[start:i], 10); err != nil {
+			if _, err := strconv.ParseFloat(string(buf[start:i]), 10); err != nil {
 				return i, fmt.Errorf("invalid float")
 			}
 		}
@@ -1005,7 +991,11 @@ func scanTagValue(buf []byte, i int) (int, []byte) {
 func scanFieldValue(buf []byte, i int) (int, []byte) {
 	start := i
 	quoted := false
-	for i < len(buf) {
+	for {
+		if i >= len(buf) {
+			break
+		}
+
 		// Only escape char for a field value is a double-quote
 		if buf[i] == '\\' && i+1 < len(buf) && buf[i+1] == '"' {
 			i += 2
@@ -1127,42 +1117,20 @@ func unescapeStringField(in string) string {
 
 // NewPoint returns a new point with the given measurement name, tags, fields and timestamp.  If
 // an unsupported field value (NaN) or out of range time is passed, this function returns an error.
-func NewPoint(name string, tags Tags, fields Fields, t time.Time) (Point, error) {
-	key, err := pointKey(name, tags, fields, t)
-	if err != nil {
-		return nil, err
-	}
-
-	return &point{
-		key:    key,
-		time:   t,
-		fields: fields.MarshalBinary(),
-	}, nil
-}
-
-// pointKey checks some basic requirements for valid points, and returns the
-// key, along with an possible error
-func pointKey(measurement string, tags Tags, fields Fields, t time.Time) ([]byte, error) {
+func NewPoint(name string, tags Tags, fields Fields, time time.Time) (Point, error) {
 	if len(fields) == 0 {
 		return nil, ErrPointMustHaveAField
 	}
-
-	if !t.IsZero() {
-		if err := CheckTime(t); err != nil {
+	if !time.IsZero() {
+		if err := CheckTime(time); err != nil {
 			return nil, err
 		}
 	}
 
 	for key, value := range fields {
-		switch value := value.(type) {
-		case float64:
+		if fv, ok := value.(float64); ok {
 			// Ensure the caller validates and handles invalid field values
-			if math.IsNaN(value) {
-				return nil, fmt.Errorf("NaN is an unsupported value for field %s", key)
-			}
-		case float32:
-			// Ensure the caller validates and handles invalid field values
-			if math.IsNaN(float64(value)) {
+			if math.IsNaN(fv) {
 				return nil, fmt.Errorf("NaN is an unsupported value for field %s", key)
 			}
 		}
@@ -1171,12 +1139,16 @@ func pointKey(measurement string, tags Tags, fields Fields, t time.Time) ([]byte
 		}
 	}
 
-	key := MakeKey([]byte(measurement), tags)
+	key := MakeKey([]byte(name), tags)
 	if len(key) > MaxKeyLength {
 		return nil, fmt.Errorf("max key length exceeded: %v > %v", len(key), MaxKeyLength)
 	}
 
-	return key, nil
+	return &point{
+		key:    key,
+		time:   time,
+		fields: fields.MarshalBinary(),
+	}, nil
 }
 
 // NewPointFromBytes returns a new Point from a marshalled Point.
@@ -1243,53 +1215,45 @@ func (p *point) SetTime(t time.Time) {
 	p.time = t
 }
 
-// Round implements Point.Round
-func (p *point) Round(d time.Duration) {
-	p.time = p.time.Round(d)
-}
-
 // Tags returns the tag set for the point
 func (p *point) Tags() Tags {
 	return parseTags(p.key)
 }
 
 func parseTags(buf []byte) Tags {
-	if len(buf) == 0 {
-		return nil
-	}
-
-	pos, name := scanTo(buf, 0, ',')
-
-	// it's an empty key, so there are no tags
-	if len(name) == 0 {
-		return nil
-	}
-
-	tags := make(Tags, 0, bytes.Count(buf, []byte(",")))
+	tags := make(map[string]string, bytes.Count(buf, []byte(",")))
 	hasEscape := bytes.IndexByte(buf, '\\') != -1
 
-	i := pos + 1
-	var key, value []byte
-	for {
-		if i >= len(buf) {
-			break
-		}
-		i, key = scanTo(buf, i, '=')
-		i, value = scanTagValue(buf, i+1)
+	if len(buf) != 0 {
+		pos, name := scanTo(buf, 0, ',')
 
-		if len(value) == 0 {
-			continue
+		// it's an empyt key, so there are no tags
+		if len(name) == 0 {
+			return tags
 		}
 
-		if hasEscape {
-			tags = append(tags, Tag{Key: unescapeTag(key), Value: unescapeTag(value)})
-		} else {
-			tags = append(tags, Tag{Key: key, Value: value})
-		}
+		i := pos + 1
+		var key, value []byte
+		for {
+			if i >= len(buf) {
+				break
+			}
+			i, key = scanTo(buf, i, '=')
+			i, value = scanTagValue(buf, i+1)
 
-		i++
+			if len(value) == 0 {
+				continue
+			}
+
+			if hasEscape {
+				tags[string(unescapeTag(key))] = string(unescapeTag(value))
+			} else {
+				tags[string(key)] = string(value)
+			}
+
+			i++
+		}
 	}
-
 	return tags
 }
 
@@ -1308,8 +1272,7 @@ func (p *point) SetTags(tags Tags) {
 // AddTag adds or replaces a tag value for a point
 func (p *point) AddTag(key, value string) {
 	tags := p.Tags()
-	tags = append(tags, Tag{Key: []byte(key), Value: []byte(value)})
-	sort.Sort(tags)
+	tags[key] = value
 	p.key = MakeKey([]byte(p.Name()), tags)
 }
 
@@ -1344,41 +1307,6 @@ func (p *point) String() string {
 		return string(p.Key()) + " " + string(p.fields)
 	}
 	return string(p.Key()) + " " + string(p.fields) + " " + strconv.FormatInt(p.UnixNano(), 10)
-}
-
-// AppendString implements Point.AppendString
-func (p *point) AppendString(buf []byte) []byte {
-	buf = append(buf, p.key...)
-	buf = append(buf, ' ')
-	buf = append(buf, p.fields...)
-
-	if !p.time.IsZero() {
-		buf = append(buf, ' ')
-		buf = strconv.AppendInt(buf, p.UnixNano(), 10)
-	}
-
-	return buf
-}
-
-func (p *point) StringSize() int {
-	size := len(p.key) + len(p.fields) + 1
-
-	if !p.time.IsZero() {
-		digits := 1 // even "0" has one digit
-		t := p.UnixNano()
-		if t < 0 {
-			// account for negative sign, then negate
-			digits++
-			t = -t
-		}
-		for t > 9 { // already accounted for one digit
-			digits++
-			t /= 10
-		}
-		size += digits + 1 // digits and a space
-	}
-
-	return size
 }
 
 func (p *point) MarshalBinary() ([]byte, error) {
@@ -1444,7 +1372,7 @@ func (p *point) unmarshalBinary() Fields {
 }
 
 func (p *point) HashID() uint64 {
-	h := NewInlineFNV64a()
+	h := fnv.New64a()
 	h.Write(p.key)
 	sum := h.Sum64()
 	return sum
@@ -1454,176 +1382,64 @@ func (p *point) UnixNano() int64 {
 	return p.Time().UnixNano()
 }
 
-func (p *point) Split(size int) []Point {
-	if p.time.IsZero() || len(p.String()) <= size {
-		return []Point{p}
-	}
-
-	// key string, timestamp string, spaces
-	size -= len(p.key) + len(strconv.FormatInt(p.time.UnixNano(), 10)) + 2
-
-	var points []Point
-	var start, cur int
-
-	for cur < len(p.fields) {
-		end, _ := scanTo(p.fields, cur, '=')
-		end, _ = scanFieldValue(p.fields, end+1)
-
-		if cur > start && end-start > size {
-			points = append(points, &point{
-				key:    p.key,
-				time:   p.time,
-				fields: p.fields[start : cur-1],
-			})
-			start = cur
-		}
-
-		cur = end + 1
-	}
-
-	points = append(points, &point{
-		key:    p.key,
-		time:   p.time,
-		fields: p.fields[start:],
-	})
-
-	return points
-}
-
-// Tag represents a single key/value tag pair.
-type Tag struct {
-	Key   []byte
-	Value []byte
-}
-
-// Tags represents a sorted list of tags.
-type Tags []Tag
-
-// NewTags returns a new Tags from a map.
-func NewTags(m map[string]string) Tags {
-	if len(m) == 0 {
-		return nil
-	}
-	a := make(Tags, 0, len(m))
-	for k, v := range m {
-		a = append(a, Tag{Key: []byte(k), Value: []byte(v)})
-	}
-	sort.Sort(a)
-	return a
-}
-
-func (a Tags) Len() int           { return len(a) }
-func (a Tags) Less(i, j int) bool { return bytes.Compare(a[i].Key, a[j].Key) == -1 }
-func (a Tags) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-
-// Get returns the value for a key.
-func (a Tags) Get(key []byte) []byte {
-	// OPTIMIZE: Use sort.Search if tagset is large.
-
-	for _, t := range a {
-		if bytes.Equal(t.Key, key) {
-			return t.Value
-		}
-	}
-	return nil
-}
-
-// GetString returns the string value for a string key.
-func (a Tags) GetString(key string) string {
-	return string(a.Get([]byte(key)))
-}
-
-// Set sets the value for a key.
-func (a *Tags) Set(key, value []byte) {
-	for _, t := range *a {
-		if bytes.Equal(t.Key, key) {
-			t.Value = value
-			return
-		}
-	}
-	*a = append(*a, Tag{Key: key, Value: value})
-	sort.Sort(*a)
-}
-
-// SetString sets the string value for a string key.
-func (a *Tags) SetString(key, value string) {
-	a.Set([]byte(key), []byte(value))
-}
-
-// Delete removes a tag by key.
-func (a *Tags) Delete(key []byte) {
-	for i, t := range *a {
-		if bytes.Equal(t.Key, key) {
-			copy((*a)[i:], (*a)[i+1:])
-			(*a)[len(*a)-1] = Tag{}
-			*a = (*a)[:len(*a)-1]
-			return
-		}
-	}
-}
-
-// Map returns a map representation of the tags.
-func (a Tags) Map() map[string]string {
-	m := make(map[string]string, len(a))
-	for _, t := range a {
-		m[string(t.Key)] = string(t.Value)
-	}
-	return m
-}
+// Tags represents a mapping between a Point's tag names and their
+// values.
+type Tags map[string]string
 
 // Merge merges the tags combining the two. If both define a tag with the
 // same key, the merged value overwrites the old value.
 // A new map is returned.
-func (a Tags) Merge(other map[string]string) Tags {
-	merged := make(map[string]string, len(a)+len(other))
-	for _, t := range a {
-		merged[string(t.Key)] = string(t.Value)
+func (t Tags) Merge(other map[string]string) Tags {
+	merged := make(map[string]string, len(t)+len(other))
+	for k, v := range t {
+		merged[k] = v
 	}
 	for k, v := range other {
 		merged[k] = v
 	}
-	return NewTags(merged)
+	return Tags(merged)
 }
 
 // HashKey hashes all of a tag's keys.
-func (a Tags) HashKey() []byte {
+func (t Tags) HashKey() []byte {
 	// Empty maps marshal to empty bytes.
-	if len(a) == 0 {
+	if len(t) == 0 {
 		return nil
 	}
 
-	escaped := make(Tags, 0, len(a))
-	for _, t := range a {
-		ek := escapeTag(t.Key)
-		ev := escapeTag(t.Value)
+	escaped := Tags{}
+	for k, v := range t {
+		ek := escapeTag([]byte(k))
+		ev := escapeTag([]byte(v))
 
 		if len(ev) > 0 {
-			escaped = append(escaped, Tag{Key: ek, Value: ev})
+			escaped[string(ek)] = string(ev)
 		}
 	}
 
 	// Extract keys and determine final size.
 	sz := len(escaped) + (len(escaped) * 2) // separators
-	keys := make([][]byte, len(escaped)+1)
-	for i, t := range escaped {
-		keys[i] = t.Key
-		sz += len(t.Key) + len(t.Value)
+	keys := make([]string, len(escaped)+1)
+	i := 0
+	for k, v := range escaped {
+		keys[i] = k
+		i++
+		sz += len(k) + len(v)
 	}
-	keys = keys[:len(escaped)]
-	sort.Sort(byteSlices(keys))
-
+	keys = keys[:i]
+	sort.Strings(keys)
 	// Generate marshaled bytes.
 	b := make([]byte, sz)
 	buf := b
 	idx := 0
-	for i, k := range keys {
+	for _, k := range keys {
 		buf[idx] = ','
 		idx++
 		copy(buf[idx:idx+len(k)], k)
 		idx += len(k)
 		buf[idx] = '='
 		idx++
-		v := escaped[i].Value
+		v := escaped[k]
 		copy(buf[idx:idx+len(v)], v)
 		idx += len(v)
 	}
@@ -1637,18 +1453,18 @@ type Fields map[string]interface{}
 func parseNumber(val []byte) (interface{}, error) {
 	if val[len(val)-1] == 'i' {
 		val = val[:len(val)-1]
-		return ParseIntBytes(val, 10, 64)
+		return strconv.ParseInt(string(val), 10, 64)
 	}
 	for i := 0; i < len(val); i++ {
 		// If there is a decimal or an N (NaN), I (Inf), parse as float
 		if val[i] == '.' || val[i] == 'N' || val[i] == 'n' || val[i] == 'I' || val[i] == 'i' || val[i] == 'e' {
-			return ParseFloatBytes(val, 64)
+			return strconv.ParseFloat(string(val), 64)
 		}
 		if val[i] < '0' && val[i] > '9' {
 			return string(val), nil
 		}
 	}
-	return ParseFloatBytes(val, 64)
+	return strconv.ParseFloat(string(val), 64)
 }
 
 func newFieldsFromBinary(buf []byte) Fields {
@@ -1702,91 +1518,75 @@ func newFieldsFromBinary(buf []byte) Fields {
 // represenation
 // NOTE: uint64 is specifically not supported due to potential overflow when we decode
 // again later to an int64
-// NOTE2: uint is accepted, and may be 64 bits, and is for some reason accepted...
 func (p Fields) MarshalBinary() []byte {
-	var b []byte
-	keys := make([]string, 0, len(p))
-
+	b := []byte{}
+	keys := make([]string, len(p))
+	i := 0
 	for k := range p {
-		keys = append(keys, k)
+		keys[i] = k
+		i++
 	}
-
-	// Not really necessary, can probably be removed.
 	sort.Strings(keys)
 
-	for i, k := range keys {
-		if i > 0 {
-			b = append(b, ',')
+	for _, k := range keys {
+		v := p[k]
+		b = append(b, []byte(escape.String(k))...)
+		b = append(b, '=')
+		switch t := v.(type) {
+		case int:
+			b = append(b, []byte(strconv.FormatInt(int64(t), 10))...)
+			b = append(b, 'i')
+		case int8:
+			b = append(b, []byte(strconv.FormatInt(int64(t), 10))...)
+			b = append(b, 'i')
+		case int16:
+			b = append(b, []byte(strconv.FormatInt(int64(t), 10))...)
+			b = append(b, 'i')
+		case int32:
+			b = append(b, []byte(strconv.FormatInt(int64(t), 10))...)
+			b = append(b, 'i')
+		case int64:
+			b = append(b, []byte(strconv.FormatInt(t, 10))...)
+			b = append(b, 'i')
+		case uint:
+			b = append(b, []byte(strconv.FormatInt(int64(t), 10))...)
+			b = append(b, 'i')
+		case uint8:
+			b = append(b, []byte(strconv.FormatInt(int64(t), 10))...)
+			b = append(b, 'i')
+		case uint16:
+			b = append(b, []byte(strconv.FormatInt(int64(t), 10))...)
+			b = append(b, 'i')
+		case uint32:
+			b = append(b, []byte(strconv.FormatInt(int64(t), 10))...)
+			b = append(b, 'i')
+		case float32:
+			val := []byte(strconv.FormatFloat(float64(t), 'f', -1, 32))
+			b = append(b, val...)
+		case float64:
+			val := []byte(strconv.FormatFloat(t, 'f', -1, 64))
+			b = append(b, val...)
+		case bool:
+			b = append(b, []byte(strconv.FormatBool(t))...)
+		case []byte:
+			b = append(b, t...)
+		case string:
+			b = append(b, '"')
+			b = append(b, []byte(EscapeStringField(t))...)
+			b = append(b, '"')
+		case nil:
+			// skip
+		default:
+			// Can't determine the type, so convert to string
+			b = append(b, '"')
+			b = append(b, []byte(EscapeStringField(fmt.Sprintf("%v", v)))...)
+			b = append(b, '"')
+
 		}
-		b = appendField(b, k, p[k])
+		b = append(b, ',')
 	}
-
+	if len(b) > 0 {
+		return b[0 : len(b)-1]
+	}
 	return b
 }
-
-func appendField(b []byte, k string, v interface{}) []byte {
-	b = append(b, []byte(escape.String(k))...)
-	b = append(b, '=')
-
-	// check popular types first
-	switch v := v.(type) {
-	case float64:
-		b = strconv.AppendFloat(b, v, 'f', -1, 64)
-	case int64:
-		b = strconv.AppendInt(b, v, 10)
-		b = append(b, 'i')
-	case string:
-		b = append(b, '"')
-		b = append(b, []byte(EscapeStringField(v))...)
-		b = append(b, '"')
-	case bool:
-		b = strconv.AppendBool(b, v)
-	case int32:
-		b = strconv.AppendInt(b, int64(v), 10)
-		b = append(b, 'i')
-	case int16:
-		b = strconv.AppendInt(b, int64(v), 10)
-		b = append(b, 'i')
-	case int8:
-		b = strconv.AppendInt(b, int64(v), 10)
-		b = append(b, 'i')
-	case int:
-		b = strconv.AppendInt(b, int64(v), 10)
-		b = append(b, 'i')
-	case uint32:
-		b = strconv.AppendInt(b, int64(v), 10)
-		b = append(b, 'i')
-	case uint16:
-		b = strconv.AppendInt(b, int64(v), 10)
-		b = append(b, 'i')
-	case uint8:
-		b = strconv.AppendInt(b, int64(v), 10)
-		b = append(b, 'i')
-	// TODO: 'uint' should be considered just as "dangerous" as a uint64,
-	// perhaps the value should be checked and capped at MaxInt64? We could
-	// then include uint64 as an accepted value
-	case uint:
-		b = strconv.AppendInt(b, int64(v), 10)
-		b = append(b, 'i')
-	case float32:
-		b = strconv.AppendFloat(b, float64(v), 'f', -1, 32)
-	case []byte:
-		b = append(b, v...)
-	case nil:
-		// skip
-	default:
-		// Can't determine the type, so convert to string
-		b = append(b, '"')
-		b = append(b, []byte(EscapeStringField(fmt.Sprintf("%v", v)))...)
-		b = append(b, '"')
-
-	}
-
-	return b
-}
-
-type byteSlices [][]byte
-
-func (a byteSlices) Len() int           { return len(a) }
-func (a byteSlices) Less(i, j int) bool { return bytes.Compare(a[i], a[j]) == -1 }
-func (a byteSlices) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }

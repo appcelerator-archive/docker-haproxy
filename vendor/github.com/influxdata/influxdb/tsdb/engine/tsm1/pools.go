@@ -1,13 +1,9 @@
 package tsm1
 
-import (
-	"sync"
-
-	"github.com/influxdata/influxdb/pkg/pool"
-)
+import "sync"
 
 var (
-	bufPool          = pool.NewBytes(1024)
+	bufPool          sync.Pool
 	float64ValuePool sync.Pool
 	integerValuePool sync.Pool
 	booleanValuePool sync.Pool
@@ -16,7 +12,15 @@ var (
 
 // getBuf returns a buffer with length size from the buffer pool.
 func getBuf(size int) []byte {
-	return bufPool.Get(size)
+	x := bufPool.Get()
+	if x == nil {
+		return make([]byte, size)
+	}
+	buf := x.([]byte)
+	if cap(buf) < size {
+		return make([]byte, size)
+	}
+	return buf[:size]
 }
 
 // putBuf returns a buffer to the pool.

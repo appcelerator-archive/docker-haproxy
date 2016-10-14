@@ -558,7 +558,15 @@ type BroadcastChannel struct {
 
 func NewBroadcastChannel() *BroadcastChannel {
 	chs := make([]chan response, 0)
-	return &BroadcastChannel{chs: chs}
+
+	var wg sync.WaitGroup
+
+	b := &BroadcastChannel{
+		chs: chs,
+		wg:  wg,
+	}
+
+	return b
 }
 
 func (b *BroadcastChannel) Register(fn responseHandler) {

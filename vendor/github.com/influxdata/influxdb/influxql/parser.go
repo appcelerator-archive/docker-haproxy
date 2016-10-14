@@ -475,17 +475,10 @@ func (p *Parser) parseAlterRetentionPolicyStatement() (*AlterRetentionPolicyStat
 	stmt.Database = ident
 
 	// Loop through option tokens (DURATION, REPLICATION, SHARD DURATION, DEFAULT, etc.).
-	found := make(map[Token]struct{})
+	maxNumOptions := 4
 Loop:
-	for {
+	for i := 0; i < maxNumOptions; i++ {
 		tok, pos, lit := p.scanIgnoreWhitespace()
-		if _, ok := found[tok]; ok {
-			return nil, &ParseError{
-				Message: fmt.Sprintf("found duplicate %s option", tok),
-				Pos:     pos,
-			}
-		}
-
 		switch tok {
 		case DURATION:
 			d, err := p.parseDuration()
@@ -513,13 +506,12 @@ Loop:
 		case DEFAULT:
 			stmt.Default = true
 		default:
-			if len(found) == 0 {
+			if i < 1 {
 				return nil, newParseError(tokstr(tok, lit), []string{"DURATION", "REPLICATION", "SHARD", "DEFAULT"}, pos)
 			}
 			p.unscan()
 			break Loop
 		}
-		found[tok] = struct{}{}
 	}
 
 	return stmt, nil
@@ -1053,17 +1045,6 @@ func (p *Parser) parseShowSeriesStatement() (*ShowSeriesStatement, error) {
 	stmt := &ShowSeriesStatement{}
 	var err error
 
-	// Parse optional ON clause.
-	if tok, _, _ := p.scanIgnoreWhitespace(); tok == ON {
-		// Parse the database.
-		stmt.Database, err = p.parseIdent()
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		p.unscan()
-	}
-
 	// Parse optional FROM.
 	if tok, _, _ := p.scanIgnoreWhitespace(); tok == FROM {
 		if stmt.Sources, err = p.parseSources(); err != nil {
@@ -1101,17 +1082,6 @@ func (p *Parser) parseShowSeriesStatement() (*ShowSeriesStatement, error) {
 func (p *Parser) parseShowMeasurementsStatement() (*ShowMeasurementsStatement, error) {
 	stmt := &ShowMeasurementsStatement{}
 	var err error
-
-	// Parse optional ON clause.
-	if tok, _, _ := p.scanIgnoreWhitespace(); tok == ON {
-		// Parse the database.
-		stmt.Database, err = p.parseIdent()
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		p.unscan()
-	}
 
 	// Parse optional WITH clause.
 	if tok, _, _ := p.scanIgnoreWhitespace(); tok == WITH {
@@ -1171,16 +1141,16 @@ func (p *Parser) parseShowRetentionPoliciesStatement() (*ShowRetentionPoliciesSt
 	stmt := &ShowRetentionPoliciesStatement{}
 
 	// Expect an "ON" keyword.
-	if tok, _, _ := p.scanIgnoreWhitespace(); tok == ON {
-		// Parse the database.
-		ident, err := p.parseIdent()
-		if err != nil {
-			return nil, err
-		}
-		stmt.Database = ident
-	} else {
-		p.unscan()
+	if tok, pos, lit := p.scanIgnoreWhitespace(); tok != ON {
+		return nil, newParseError(tokstr(tok, lit), []string{"ON"}, pos)
 	}
+
+	// Parse the database.
+	ident, err := p.parseIdent()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Database = ident
 
 	return stmt, nil
 }
@@ -1190,17 +1160,6 @@ func (p *Parser) parseShowRetentionPoliciesStatement() (*ShowRetentionPoliciesSt
 func (p *Parser) parseShowTagKeysStatement() (*ShowTagKeysStatement, error) {
 	stmt := &ShowTagKeysStatement{}
 	var err error
-
-	// Parse optional ON clause.
-	if tok, _, _ := p.scanIgnoreWhitespace(); tok == ON {
-		// Parse the database.
-		stmt.Database, err = p.parseIdent()
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		p.unscan()
-	}
 
 	// Parse optional source.
 	if tok, _, _ := p.scanIgnoreWhitespace(); tok == FROM {
@@ -1249,17 +1208,6 @@ func (p *Parser) parseShowTagKeysStatement() (*ShowTagKeysStatement, error) {
 func (p *Parser) parseShowTagValuesStatement() (*ShowTagValuesStatement, error) {
 	stmt := &ShowTagValuesStatement{}
 	var err error
-
-	// Parse optional ON clause.
-	if tok, _, _ := p.scanIgnoreWhitespace(); tok == ON {
-		// Parse the database.
-		stmt.Database, err = p.parseIdent()
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		p.unscan()
-	}
 
 	// Parse optional source.
 	if tok, _, _ := p.scanIgnoreWhitespace(); tok == FROM {
@@ -1365,17 +1313,6 @@ func (p *Parser) parseShowSubscriptionsStatement() (*ShowSubscriptionsStatement,
 func (p *Parser) parseShowFieldKeysStatement() (*ShowFieldKeysStatement, error) {
 	stmt := &ShowFieldKeysStatement{}
 	var err error
-
-	// Parse optional ON clause.
-	if tok, _, _ := p.scanIgnoreWhitespace(); tok == ON {
-		// Parse the database.
-		stmt.Database, err = p.parseIdent()
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		p.unscan()
-	}
 
 	// Parse optional source.
 	if tok, _, _ := p.scanIgnoreWhitespace(); tok == FROM {
@@ -2472,14 +2409,9 @@ func (p *Parser) parseUnaryExpr() (Expr, error) {
 		}
 		return &RegexLiteral{Val: re}, nil
 	case BOUNDPARAM:
-		k := strings.TrimPrefix(lit, "$")
-		if len(k) == 0 {
-			return nil, errors.New("empty bound parameter")
-		}
-
-		v, ok := p.params[k]
+		v, ok := p.params[lit]
 		if !ok {
-			return nil, fmt.Errorf("missing parameter: %s", k)
+			return nil, fmt.Errorf("missing parameter: %s", lit)
 		}
 
 		switch v := v.(type) {
@@ -2631,9 +2563,6 @@ func (p *Parser) consumeWhitespace() {
 func (p *Parser) unscan() { p.s.Unscan() }
 
 // ParseDuration parses a time duration from a string.
-// This is needed instead of time.ParseDuration because this will support
-// the full syntax that InfluxQL supports for specifying durations
-// including weeks and days.
 func ParseDuration(s string) (time.Duration, error) {
 	// Return an error if the string is blank or one character
 	if len(s) < 2 {
@@ -2643,78 +2572,41 @@ func ParseDuration(s string) (time.Duration, error) {
 	// Split string into individual runes.
 	a := split(s)
 
-	// Start with a zero duration.
-	var d time.Duration
-	i := 0
-
-	// Check for a negative.
-	isNegative := false
-	if a[i] == '-' {
-		isNegative = true
-		i++
+	// Extract the unit of measure.
+	// If the last two characters are "ms" then parse as milliseconds.
+	// Otherwise just use the last character as the unit of measure.
+	var num, uom string
+	if len(s) > 2 && s[len(s)-2:] == "ms" {
+		num, uom = string(a[:len(a)-2]), "ms"
+	} else {
+		num, uom = string(a[:len(a)-1]), string(a[len(a)-1:])
 	}
 
-	var measure int64
-	var unit string
-
-	// Parsing loop.
-	for i < len(a) {
-		// Find the number portion.
-		start := i
-		for ; i < len(a) && isDigit(a[i]); i++ {
-			// Scan for the digits.
-		}
-
-		// Check if we reached the end of the string prematurely.
-		if i >= len(a) || i == start {
-			return 0, ErrInvalidDuration
-		}
-
-		// Parse the numeric part.
-		n, err := strconv.ParseInt(string(a[start:i]), 10, 64)
-		if err != nil {
-			return 0, ErrInvalidDuration
-		}
-		measure = n
-
-		// Extract the unit of measure.
-		// If the last two characters are "ms" then parse as milliseconds.
-		// Otherwise just use the last character as the unit of measure.
-		unit = string(a[i])
-		switch a[i] {
-		case 'u', 'µ':
-			d += time.Duration(n) * time.Microsecond
-		case 'm':
-			if i+1 < len(a) && a[i+1] == 's' {
-				unit = string(a[i : i+2])
-				d += time.Duration(n) * time.Millisecond
-				i += 2
-				continue
-			}
-			d += time.Duration(n) * time.Minute
-		case 's':
-			d += time.Duration(n) * time.Second
-		case 'h':
-			d += time.Duration(n) * time.Hour
-		case 'd':
-			d += time.Duration(n) * 24 * time.Hour
-		case 'w':
-			d += time.Duration(n) * 7 * 24 * time.Hour
-		default:
-			return 0, ErrInvalidDuration
-		}
-		i++
+	// Parse the numeric part.
+	n, err := strconv.ParseInt(num, 10, 64)
+	if err != nil {
+		return 0, ErrInvalidDuration
 	}
 
-	// Check to see if we overflowed a duration
-	if d < 0 && !isNegative {
-		return 0, fmt.Errorf("overflowed duration %d%s: choose a smaller duration or INF", measure, unit)
+	// Multiply by the unit of measure.
+	switch uom {
+	case "u", "µ":
+		return time.Duration(n) * time.Microsecond, nil
+	case "ms":
+		return time.Duration(n) * time.Millisecond, nil
+	case "s":
+		return time.Duration(n) * time.Second, nil
+	case "m":
+		return time.Duration(n) * time.Minute, nil
+	case "h":
+		return time.Duration(n) * time.Hour, nil
+	case "d":
+		return time.Duration(n) * 24 * time.Hour, nil
+	case "w":
+		return time.Duration(n) * 7 * 24 * time.Hour, nil
+	default:
+		return 0, ErrInvalidDuration
 	}
-
-	if isNegative {
-		d = -d
-	}
-	return d, nil
 }
 
 // FormatDuration formats a duration to a string.

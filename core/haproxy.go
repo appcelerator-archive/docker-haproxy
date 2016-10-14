@@ -2,10 +2,13 @@ package core
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"os/signal"
+	"regexp"
 	"syscall"
 	"time"
 )
@@ -14,7 +17,7 @@ import (
 type HAProxy struct {
 	exec          *exec.Cmd
 	isLoadingConf bool
-	loadTry	      int
+	loadTry       int
 }
 
 type publicService struct {
@@ -34,6 +37,17 @@ var (
 func (app *HAProxy) init() {
 	app.isLoadingConf = false
 	app.loadTry = 0
+	if conf.noDefaultBackend {
+		fmt.Println("Default backends are disabled by request")
+		err := app.disableDefaultBackends("/usr/local/etc/haproxy/haproxy.cfg")
+		if err != nil {
+			log.Fatalf("Failed to disable backends in %s: %v\n", "/usr/local/etc/haproxy/haproxy.cfg", err)
+		}
+		err = app.disableDefaultBackends("/usr/local/etc/haproxy/haproxy-main.cfg.tpt")
+		if err != nil {
+			log.Fatalf("Failed to disable backends in %s: %v\n", "/usr/local/etc/haproxy/haproxy-main.cfg.tpt", err)
+		}
+	}
 }
 
 //Launch a routine to catch SIGTERM Signal
@@ -91,11 +105,11 @@ func (app *HAProxy) reloadConfiguration() {
 		}
 		app.loadTry++
 		fmt.Printf("HAProxy reload configuration error, try=%s: %v\n", app.loadTry, err)
-		if (app.loadTry > 6) {
+		if app.loadTry > 6 {
 			os.Exit(1)
-		} 
+		}
 		time.Sleep(10 * time.Second)
-		app.updateConfiguration(true)	
+		app.updateConfiguration(true)
 	}()
 }
 
@@ -106,6 +120,63 @@ func (app *HAProxy) updateConfiguration(reload bool) error {
 		return app.updateConfigurationMaster(reload)
 	}
 	return app.updateConfigurationStack(reload)
+}
+
+// disable a backend in the configuration file
+// useful for tests purpose when the full stack is not deployed
+func (app *HAProxy) disableDefaultBackends(target string) error {
+	file, err := os.Open(target)
+	if err != nil {
+		return err
+	}
+
+	var buf bytes.Buffer
+	var bufferedLine []byte
+
+	fmt.Printf("Updating %s...\n", target)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		match, err := regexp.MatchString(`^\s+server\s+`, line)
+		if err != nil {
+			return err
+		}
+		matchLocalhost, err := regexp.MatchString(`\s+localhost:`, line)
+		if err != nil {
+			return err
+		}
+		if match && !matchLocalhost {
+			fmt.Printf("Disabling %s\n", line)
+			bufferedLine = []byte(`#` + line + "\n")
+			if _, err = buf.Write(bufferedLine); err != nil {
+				return err
+			}
+		} else {
+			bufferedLine = []byte(line + "\n")
+			if _, err = buf.Write(bufferedLine); err != nil {
+				return err
+			}
+		}
+	}
+	if err = scanner.Err(); err != nil {
+		return err
+	}
+	if err = file.Close(); err != nil {
+		return err
+	}
+
+	fmt.Println("Writing...")
+	file, err = os.Create(target)
+	if err != nil {
+		return err
+	}
+	if _, err = buf.WriteTo(file); err != nil {
+		_ = file.Close()
+		return err
+	}
+	fmt.Println("done")
+	err = file.Close()
+	return err
 }
 
 //update HAProxy configuration for master regarding ETCD keys values and make HAProxy reload its configuration if reload is true

@@ -31,10 +31,13 @@ frontend http-in
     use_backend amp-ui if { hdr_beg(host) -i ui. }
     use_backend elasticsearch if { hdr_beg(host) -i elasticsearch. }
     use_backend grafana if { hdr_beg(host) -i grafana. }
-    #use_backend kibana if { hdr_beg(host) -i kibana. }
     use_backend registry if { hdr_beg(host) -i registry. }
 [frontend]
     default_backend controler_api
+
+frontend monitoring
+    bind *:8082
+    default_backend private_monitoring
 
 frontend registry
     bind *:5000
@@ -51,8 +54,8 @@ backend controler_api
     server controler_api1 localhost:8090
     
 backend amplifier_server
-  mode tcp
-  server srv01 amplifier:50101
+    mode tcp
+    server srv01 amplifier:50101
 
 backend registry
     server registry1 registry:5000 check resolvers docker resolve-prefer ipv4
@@ -66,10 +69,9 @@ backend elasticsearch
 backend grafana
     server grafana1 grafana:3000 check resolvers docker resolve-prefer ipv4
 
-[backends]
-
-listen admin
-    bind *:8082
+backend private_monitoring
     stats enable
     stats uri     /admin?stats
     stats realm   Haproxy\ Statistics
+
+[backends]

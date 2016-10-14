@@ -95,7 +95,7 @@ func TestContainerPsContext(t *testing.T) {
 			t.Fatalf("Expected %s, was %s\n", c.expValue, v)
 		}
 
-		h := ctx.FullHeader()
+		h := ctx.fullHeader()
 		if h != c.expHeader {
 			t.Fatalf("Expected %s, was %s\n", c.expHeader, h)
 		}
@@ -114,7 +114,7 @@ func TestContainerPsContext(t *testing.T) {
 		t.Fatalf("Expected ubuntu, was %s\n", node)
 	}
 
-	h := ctx.FullHeader()
+	h := ctx.fullHeader()
 	if h != "SWARM ID\tNODE NAME" {
 		t.Fatalf("Expected %s, was %s\n", "SWARM ID\tNODE NAME", h)
 
@@ -129,9 +129,9 @@ func TestContainerPsContext(t *testing.T) {
 	}
 
 	ctx = containerContext{c: c2, trunc: true}
-	FullHeader := ctx.FullHeader()
-	if FullHeader != "" {
-		t.Fatalf("Expected FullHeader to be empty, was %s", FullHeader)
+	fullHeader := ctx.fullHeader()
+	if fullHeader != "" {
+		t.Fatalf("Expected fullHeader to be empty, was %s", fullHeader)
 	}
 
 }
@@ -140,127 +140,186 @@ func TestContainerContextWrite(t *testing.T) {
 	unixTime := time.Now().AddDate(0, 0, -1).Unix()
 	expectedTime := time.Unix(unixTime, 0).String()
 
-	cases := []struct {
-		context  Context
+	contexts := []struct {
+		context  ContainerContext
 		expected string
 	}{
 		// Errors
 		{
-			Context{Format: "{{InvalidFunction}}"},
+			ContainerContext{
+				Context: Context{
+					Format: "{{InvalidFunction}}",
+				},
+			},
 			`Template parsing error: template: :1: function "InvalidFunction" not defined
 `,
 		},
 		{
-			Context{Format: "{{nil}}"},
+			ContainerContext{
+				Context: Context{
+					Format: "{{nil}}",
+				},
+			},
 			`Template parsing error: template: :1:2: executing "" at <nil>: nil is not a command
 `,
 		},
 		// Table Format
 		{
-			Context{Format: NewContainerFormat("table", false, true)},
+			ContainerContext{
+				Context: Context{
+					Format: "table",
+				},
+				Size: true,
+			},
 			`CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES               SIZE
 containerID1        ubuntu              ""                  24 hours ago                                                foobar_baz          0 B
 containerID2        ubuntu              ""                  24 hours ago                                                foobar_bar          0 B
 `,
 		},
 		{
-			Context{Format: NewContainerFormat("table", false, false)},
+			ContainerContext{
+				Context: Context{
+					Format: "table",
+				},
+			},
 			`CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
 containerID1        ubuntu              ""                  24 hours ago                                                foobar_baz
 containerID2        ubuntu              ""                  24 hours ago                                                foobar_bar
 `,
 		},
 		{
-			Context{Format: NewContainerFormat("table {{.Image}}", false, false)},
+			ContainerContext{
+				Context: Context{
+					Format: "table {{.Image}}",
+				},
+			},
 			"IMAGE\nubuntu\nubuntu\n",
 		},
 		{
-			Context{Format: NewContainerFormat("table {{.Image}}", false, true)},
+			ContainerContext{
+				Context: Context{
+					Format: "table {{.Image}}",
+				},
+				Size: true,
+			},
 			"IMAGE\nubuntu\nubuntu\n",
 		},
 		{
-			Context{Format: NewContainerFormat("table {{.Image}}", true, false)},
+			ContainerContext{
+				Context: Context{
+					Format: "table {{.Image}}",
+					Quiet:  true,
+				},
+			},
 			"IMAGE\nubuntu\nubuntu\n",
 		},
 		{
-			Context{Format: NewContainerFormat("table", true, false)},
+			ContainerContext{
+				Context: Context{
+					Format: "table",
+					Quiet:  true,
+				},
+			},
 			"containerID1\ncontainerID2\n",
 		},
 		// Raw Format
 		{
-			Context{Format: NewContainerFormat("raw", false, false)},
+			ContainerContext{
+				Context: Context{
+					Format: "raw",
+				},
+			},
 			fmt.Sprintf(`container_id: containerID1
 image: ubuntu
 command: ""
 created_at: %s
-status:
+status: 
 names: foobar_baz
-labels:
-ports:
+labels: 
+ports: 
 
 container_id: containerID2
 image: ubuntu
 command: ""
 created_at: %s
-status:
+status: 
 names: foobar_bar
-labels:
-ports:
+labels: 
+ports: 
 
 `, expectedTime, expectedTime),
 		},
 		{
-			Context{Format: NewContainerFormat("raw", false, true)},
+			ContainerContext{
+				Context: Context{
+					Format: "raw",
+				},
+				Size: true,
+			},
 			fmt.Sprintf(`container_id: containerID1
 image: ubuntu
 command: ""
 created_at: %s
-status:
+status: 
 names: foobar_baz
-labels:
-ports:
+labels: 
+ports: 
 size: 0 B
 
 container_id: containerID2
 image: ubuntu
 command: ""
 created_at: %s
-status:
+status: 
 names: foobar_bar
-labels:
-ports:
+labels: 
+ports: 
 size: 0 B
 
 `, expectedTime, expectedTime),
 		},
 		{
-			Context{Format: NewContainerFormat("raw", true, false)},
+			ContainerContext{
+				Context: Context{
+					Format: "raw",
+					Quiet:  true,
+				},
+			},
 			"container_id: containerID1\ncontainer_id: containerID2\n",
 		},
 		// Custom Format
 		{
-			Context{Format: "{{.Image}}"},
+			ContainerContext{
+				Context: Context{
+					Format: "{{.Image}}",
+				},
+			},
 			"ubuntu\nubuntu\n",
 		},
 		{
-			Context{Format: NewContainerFormat("{{.Image}}", false, true)},
+			ContainerContext{
+				Context: Context{
+					Format: "{{.Image}}",
+				},
+				Size: true,
+			},
 			"ubuntu\nubuntu\n",
 		},
 	}
 
-	for _, testcase := range cases {
+	for _, context := range contexts {
 		containers := []types.Container{
 			{ID: "containerID1", Names: []string{"/foobar_baz"}, Image: "ubuntu", Created: unixTime},
 			{ID: "containerID2", Names: []string{"/foobar_bar"}, Image: "ubuntu", Created: unixTime},
 		}
 		out := bytes.NewBufferString("")
-		testcase.context.Output = out
-		err := ContainerWrite(testcase.context, containers)
-		if err != nil {
-			assert.Error(t, err, testcase.expected)
-		} else {
-			assert.Equal(t, out.String(), testcase.expected)
-		}
+		context.context.Output = out
+		context.context.Containers = containers
+		context.context.Write()
+		actual := out.String()
+		assert.Equal(t, actual, context.expected)
+		// Clean buffer
+		out.Reset()
 	}
 }
 
@@ -269,56 +328,75 @@ func TestContainerContextWriteWithNoContainers(t *testing.T) {
 	containers := []types.Container{}
 
 	contexts := []struct {
-		context  Context
+		context  ContainerContext
 		expected string
 	}{
 		{
-			Context{
-				Format: "{{.Image}}",
-				Output: out,
+			ContainerContext{
+				Context: Context{
+					Format: "{{.Image}}",
+					Output: out,
+				},
 			},
 			"",
 		},
 		{
-			Context{
-				Format: "table {{.Image}}",
-				Output: out,
+			ContainerContext{
+				Context: Context{
+					Format: "table {{.Image}}",
+					Output: out,
+				},
 			},
 			"IMAGE\n",
 		},
 		{
-			Context{
-				Format: NewContainerFormat("{{.Image}}", false, true),
-				Output: out,
+			ContainerContext{
+				Context: Context{
+					Format: "{{.Image}}",
+					Output: out,
+				},
+				Size: true,
 			},
 			"",
 		},
 		{
-			Context{
-				Format: NewContainerFormat("table {{.Image}}", false, true),
-				Output: out,
+			ContainerContext{
+				Context: Context{
+					Format: "table {{.Image}}",
+					Output: out,
+				},
+				Size: true,
 			},
 			"IMAGE\n",
 		},
 		{
-			Context{
-				Format: "table {{.Image}}\t{{.Size}}",
-				Output: out,
+			ContainerContext{
+				Context: Context{
+					Format: "table {{.Image}}\t{{.Size}}",
+					Output: out,
+				},
 			},
 			"IMAGE               SIZE\n",
 		},
 		{
-			Context{
-				Format: NewContainerFormat("table {{.Image}}\t{{.Size}}", false, true),
-				Output: out,
+			ContainerContext{
+				Context: Context{
+					Format: "table {{.Image}}\t{{.Size}}",
+					Output: out,
+				},
+				Size: true,
 			},
 			"IMAGE               SIZE\n",
 		},
 	}
 
 	for _, context := range contexts {
-		ContainerWrite(context.context, containers)
-		assert.Equal(t, context.expected, out.String())
+		context.context.Containers = containers
+		context.context.Write()
+		actual := out.String()
+		if actual != context.expected {
+			t.Fatalf("Expected \n%s, got \n%s", context.expected, actual)
+		}
 		// Clean buffer
 		out.Reset()
 	}

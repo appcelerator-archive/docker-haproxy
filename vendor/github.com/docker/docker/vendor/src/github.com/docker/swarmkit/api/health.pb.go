@@ -21,11 +21,10 @@ import (
 	grpc "google.golang.org/grpc"
 )
 
-import raftselector "github.com/docker/swarmkit/manager/raftselector"
+import raftpicker "github.com/docker/swarmkit/manager/raftpicker"
 import codes "google.golang.org/grpc/codes"
 import metadata "google.golang.org/grpc/metadata"
 import transport "google.golang.org/grpc/transport"
-import time "time"
 
 import io "io"
 
@@ -154,12 +153,11 @@ func valueToGoStringHealth(v interface{}, typ string) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("func(v %v) *%v { return &v } ( %#v )", typ, typ, pv)
 }
-func extensionToGoStringHealth(m github_com_gogo_protobuf_proto.Message) string {
-	e := github_com_gogo_protobuf_proto.GetUnsafeExtensionsMap(m)
+func extensionToGoStringHealth(e map[int32]github_com_gogo_protobuf_proto.Extension) string {
 	if e == nil {
 		return "nil"
 	}
-	s := "proto.NewUnsafeXXX_InternalExtensions(map[int32]proto.Extension{"
+	s := "map[int32]proto.Extension{"
 	keys := make([]int, 0, len(e))
 	for k := range e {
 		keys = append(keys, int(k))
@@ -169,7 +167,7 @@ func extensionToGoStringHealth(m github_com_gogo_protobuf_proto.Message) string 
 	for _, k := range keys {
 		ss = append(ss, strconv.Itoa(k)+": "+e[int32(k)].GoString())
 	}
-	s += strings.Join(ss, ",") + "})"
+	s += strings.Join(ss, ",") + "}"
 	return s
 }
 
@@ -179,7 +177,7 @@ var _ grpc.ClientConn
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the grpc package it is being compiled against.
-const _ = grpc.SupportPackageIsVersion3
+const _ = grpc.SupportPackageIsVersion2
 
 // Client API for Health service
 
@@ -241,8 +239,7 @@ var _Health_serviceDesc = grpc.ServiceDesc{
 			Handler:    _Health_Check_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
-	Metadata: fileDescriptorHealth,
+	Streams: []grpc.StreamDesc{},
 }
 
 func (m *HealthCheckRequest) Marshal() (data []byte, err error) {
@@ -322,11 +319,12 @@ func encodeVarintHealth(data []byte, offset int, v uint64) int {
 
 type raftProxyHealthServer struct {
 	local        HealthServer
-	connSelector raftselector.ConnProvider
+	connSelector raftpicker.Interface
+	cluster      raftpicker.RaftCluster
 	ctxMods      []func(context.Context) (context.Context, error)
 }
 
-func NewRaftProxyHealthServer(local HealthServer, connSelector raftselector.ConnProvider, ctxMod func(context.Context) (context.Context, error)) HealthServer {
+func NewRaftProxyHealthServer(local HealthServer, connSelector raftpicker.Interface, cluster raftpicker.RaftCluster, ctxMod func(context.Context) (context.Context, error)) HealthServer {
 	redirectChecker := func(ctx context.Context) (context.Context, error) {
 		s, ok := transport.StreamFromContext(ctx)
 		if !ok {
@@ -348,6 +346,7 @@ func NewRaftProxyHealthServer(local HealthServer, connSelector raftselector.Conn
 
 	return &raftProxyHealthServer{
 		local:        local,
+		cluster:      cluster,
 		connSelector: connSelector,
 		ctxMods:      mods,
 	}
@@ -362,59 +361,34 @@ func (p *raftProxyHealthServer) runCtxMods(ctx context.Context) (context.Context
 	}
 	return ctx, nil
 }
-func (p *raftProxyHealthServer) pollNewLeaderConn(ctx context.Context) (*grpc.ClientConn, error) {
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			conn, err := p.connSelector.LeaderConn(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			client := NewHealthClient(conn)
-
-			resp, err := client.Check(ctx, &HealthCheckRequest{Service: "Raft"})
-			if err != nil || resp.Status != HealthCheckResponse_SERVING {
-				continue
-			}
-			return conn, nil
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-	}
-}
 
 func (p *raftProxyHealthServer) Check(ctx context.Context, r *HealthCheckRequest) (*HealthCheckResponse, error) {
 
-	conn, err := p.connSelector.LeaderConn(ctx)
+	if p.cluster.IsLeader() {
+		return p.local.Check(ctx, r)
+	}
+	ctx, err := p.runCtxMods(ctx)
 	if err != nil {
-		if err == raftselector.ErrIsLeader {
-			return p.local.Check(ctx, r)
-		}
 		return nil, err
 	}
-	modCtx, err := p.runCtxMods(ctx)
+	conn, err := p.connSelector.Conn()
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := NewHealthClient(conn).Check(modCtx, r)
-	if err != nil {
-		if !strings.Contains(err.Error(), "is closing") && !strings.Contains(err.Error(), "the connection is unavailable") && !strings.Contains(err.Error(), "connection error") {
-			return resp, err
-		}
-		conn, err := p.pollNewLeaderConn(ctx)
+	defer func() {
 		if err != nil {
-			if err == raftselector.ErrIsLeader {
-				return p.local.Check(ctx, r)
+			errStr := err.Error()
+			if strings.Contains(errStr, grpc.ErrClientConnClosing.Error()) ||
+				strings.Contains(errStr, grpc.ErrClientConnTimeout.Error()) ||
+				strings.Contains(errStr, "connection error") ||
+				grpc.Code(err) == codes.Internal {
+				p.connSelector.Reset()
 			}
-			return nil, err
 		}
-		return NewHealthClient(conn).Check(modCtx, r)
-	}
-	return resp, err
+	}()
+
+	return NewHealthClient(conn).Check(ctx, r)
 }
 
 func (m *HealthCheckRequest) Size() (n int) {
@@ -729,8 +703,6 @@ var (
 	ErrInvalidLengthHealth = fmt.Errorf("proto: negative length found during unmarshaling")
 	ErrIntOverflowHealth   = fmt.Errorf("proto: integer overflow")
 )
-
-func init() { proto.RegisterFile("health.proto", fileDescriptorHealth) }
 
 var fileDescriptorHealth = []byte{
 	// 291 bytes of a gzipped FileDescriptorProto

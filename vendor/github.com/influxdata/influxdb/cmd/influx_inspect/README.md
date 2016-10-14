@@ -38,36 +38,25 @@ Only display index and block data match this key substring.
 Exports all tsm files to line protocol.  This output file can be imported via the [influx](https://github.com/influxdata/influxdb/tree/master/importer#running-the-import-command) command.
 
 
-#### `-datadir` string
-Data storage path.
+#### `-dir` string
+Root storage path.
 
-`default` = "$HOME/.influxdb/data"
-
-#### `-waldir` string
-WAL storage path.
-
-`default` = "$HOME/.influxdb/wal"
+`default` = "$HOME/.influxdb"
 
 #### `-out` string
 Destination file to export to
 
 `default` = "$HOME/.influxdb/export"
 
-#### `-database` string (optional)
+#### `-db` string (optional)
 Database to export.
 
 `default` = ""
 
-#### `-retention` string (optional)
+#### `-rp` string (optional)
 Retention policy to export.
 
 `default` = ""
-
-#### `-start` string (optional)
-Optional. The time range to start at.
-
-#### `-end` string (optional)
-Optional. The time range to end at.
 
 #### `-compress` bool (optional)
 Compress the output.

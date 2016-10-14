@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/influxdata/influxdb/influxql"
-	"github.com/influxdata/influxdb/pkg/pool"
 	"github.com/influxdata/influxdb/tsdb"
 )
 
@@ -26,24 +25,6 @@ const (
 	// encodedBlockHeaderSize is the size of the header for an encoded block.  There is one
 	// byte encoding the type of the block.
 	encodedBlockHeaderSize = 1
-)
-
-var (
-	timeEncoderPool = pool.NewGeneric(1024, func(sz int) interface{} {
-		return NewTimeEncoder(sz)
-	})
-	integerEncoderPool = pool.NewGeneric(1024, func(sz int) interface{} {
-		return NewIntegerEncoder(sz)
-	})
-	floatEncoderPool = pool.NewGeneric(1024, func(sz int) interface{} {
-		return NewFloatEncoder()
-	})
-	stringEncoderPool = pool.NewGeneric(1024, func(sz int) interface{} {
-		return NewStringEncoder(sz)
-	})
-	booleanEncoderPool = pool.NewGeneric(1024, func(sz int) interface{} {
-		return NewBooleanEncoder(sz)
-	})
 )
 
 type Value interface {
@@ -239,11 +220,11 @@ func encodeFloatBlock(buf []byte, values []Value) ([]byte, error) {
 	// for timestamps and values.
 
 	// Encode values using Gorilla float compression
-	venc := getFloatEncoder()
+	venc := NewFloatEncoder()
 
 	// Encode timestamps using an adaptive encoder that uses delta-encoding,
 	// frame-or-reference and run length encoding.
-	tsenc := getTimeEncoder(len(values))
+	tsenc := NewTimeEncoder()
 
 	for _, v := range values {
 		tsenc.Write(v.UnixNano())
@@ -251,29 +232,22 @@ func encodeFloatBlock(buf []byte, values []Value) ([]byte, error) {
 	}
 	venc.Finish()
 
-	var err error
-	var b, tb, vb []byte
-
 	// Encoded timestamp values
-	tb, err = tsenc.Bytes()
+	tb, err := tsenc.Bytes()
 	if err != nil {
-		goto cleanup
+		return nil, err
 	}
 	// Encoded float values
-	vb, err = venc.Bytes()
+	vb, err := venc.Bytes()
 	if err != nil {
-		goto cleanup
+		return nil, err
 	}
 
 	// Prepend the first timestamp of the block in the first 8 bytes and the block
 	// in the next byte, followed by the block
-	b = packBlock(buf, BlockFloat64, tb, vb)
-
-cleanup:
-	putTimeEncoder(tsenc)
-	putFloatEncoder(venc)
-	return b, err
-
+	block := packBlockHeader(BlockFloat64)
+	block = append(block, packBlock(tb, vb)...)
+	return block, nil
 }
 
 func DecodeFloatBlock(block []byte, tdec *TimeDecoder, vdec *FloatDecoder, a *[]FloatValue) ([]FloatValue, error) {
@@ -350,38 +324,34 @@ func encodeBooleanBlock(buf []byte, values []Value) ([]byte, error) {
 
 	// A boolean block is encoded using different compression strategies
 	// for timestamps and values.
-	venc := getBooleanEncoder(len(values))
+
+	// Encode values using Gorilla float compression
+	venc := NewBooleanEncoder()
 
 	// Encode timestamps using an adaptive encoder
-	tsenc := getTimeEncoder(len(values))
+	tsenc := NewTimeEncoder()
 
 	for _, v := range values {
 		tsenc.Write(v.UnixNano())
 		venc.Write(v.(*BooleanValue).value)
 	}
 
-	var err error
-	var b, tb, vb []byte
-
 	// Encoded timestamp values
-	tb, err = tsenc.Bytes()
+	tb, err := tsenc.Bytes()
 	if err != nil {
-		goto cleanup
+		return nil, err
 	}
 	// Encoded float values
-	vb, err = venc.Bytes()
+	vb, err := venc.Bytes()
 	if err != nil {
-		goto cleanup
+		return nil, err
 	}
 
 	// Prepend the first timestamp of the block in the first 8 bytes and the block
 	// in the next byte, followed by the block
-	b = packBlock(buf, BlockBoolean, tb, vb)
-
-cleanup:
-	putTimeEncoder(tsenc)
-	putBooleanEncoder(venc)
-	return b, err
+	block := packBlockHeader(BlockBoolean)
+	block = append(block, packBlock(tb, vb)...)
+	return block, nil
 }
 
 func DecodeBooleanBlock(block []byte, tdec *TimeDecoder, vdec *BooleanDecoder, a *[]BooleanValue) ([]BooleanValue, error) {
@@ -450,35 +420,27 @@ func (f *IntegerValue) String() string {
 }
 
 func encodeIntegerBlock(buf []byte, values []Value) ([]byte, error) {
-	tsEnc := getTimeEncoder(len(values))
-	vEnc := getIntegerEncoder(len(values))
-
+	tsEnc := NewTimeEncoder()
+	vEnc := NewIntegerEncoder()
 	for _, v := range values {
 		tsEnc.Write(v.UnixNano())
 		vEnc.Write(v.(*IntegerValue).value)
 	}
 
-	var err error
-	var b, tb, vb []byte
-
 	// Encoded timestamp values
-	tb, err = tsEnc.Bytes()
+	tb, err := tsEnc.Bytes()
 	if err != nil {
-		goto cleanup
+		return nil, err
 	}
 	// Encoded int64 values
-	vb, err = vEnc.Bytes()
+	vb, err := vEnc.Bytes()
 	if err != nil {
-		goto cleanup
+		return nil, err
 	}
 
 	// Prepend the first timestamp of the block in the first 8 bytes
-	b = packBlock(buf, BlockInteger, tb, vb)
-
-cleanup:
-	putTimeEncoder(tsEnc)
-	putIntegerEncoder(vEnc)
-	return b, err
+	block := packBlockHeader(BlockInteger)
+	return append(block, packBlock(tb, vb)...), nil
 }
 
 func DecodeIntegerBlock(block []byte, tdec *TimeDecoder, vdec *IntegerDecoder, a *[]IntegerValue) ([]IntegerValue, error) {
@@ -548,35 +510,27 @@ func (f *StringValue) String() string {
 }
 
 func encodeStringBlock(buf []byte, values []Value) ([]byte, error) {
-	tsEnc := getTimeEncoder(len(values))
-	vEnc := getStringEncoder(len(values) * len(values[0].(*StringValue).value))
-
+	tsEnc := NewTimeEncoder()
+	vEnc := NewStringEncoder()
 	for _, v := range values {
 		tsEnc.Write(v.UnixNano())
 		vEnc.Write(v.(*StringValue).value)
 	}
 
-	var err error
-	var b, tb, vb []byte
-
 	// Encoded timestamp values
-	tb, err = tsEnc.Bytes()
+	tb, err := tsEnc.Bytes()
 	if err != nil {
-		goto cleanup
+		return nil, err
 	}
 	// Encoded string values
-	vb, err = vEnc.Bytes()
+	vb, err := vEnc.Bytes()
 	if err != nil {
-		goto cleanup
+		return nil, err
 	}
 
 	// Prepend the first timestamp of the block in the first 8 bytes
-	b = packBlock(buf, BlockString, tb, vb)
-
-cleanup:
-	putTimeEncoder(tsEnc)
-	putStringEncoder(vEnc)
-	return b, err
+	block := packBlockHeader(BlockString)
+	return append(block, packBlock(tb, vb)...), nil
 }
 
 func DecodeStringBlock(block []byte, tdec *TimeDecoder, vdec *StringDecoder, a *[]StringValue) ([]StringValue, error) {
@@ -626,24 +580,22 @@ func DecodeStringBlock(block []byte, tdec *TimeDecoder, vdec *StringDecoder, a *
 	return (*a)[:i], nil
 }
 
-func packBlock(buf []byte, typ byte, ts []byte, values []byte) []byte {
+func packBlockHeader(blockType byte) []byte {
+	return []byte{blockType}
+}
+
+func packBlock(ts []byte, values []byte) []byte {
 	// We encode the length of the timestamp block using a variable byte encoding.
 	// This allows small byte slices to take up 1 byte while larger ones use 2 or more.
-	sz := 1 + binary.MaxVarintLen64 + len(ts) + len(values)
-	if cap(buf) < sz {
-		buf = make([]byte, sz)
-	}
-	b := buf[:sz]
-	b[0] = typ
-	i := binary.PutUvarint(b[1:1+binary.MaxVarintLen64], uint64(len(ts)))
-	i += 1
+	b := make([]byte, 10)
+	i := binary.PutUvarint(b, uint64(len(ts)))
 
 	// block is <len timestamp bytes>, <ts bytes>, <value bytes>
-	copy(b[i:], ts)
+	block := append(b[:i], ts...)
+
 	// We don't encode the value length because we know it's the rest of the block after
 	// the timestamp block.
-	copy(b[i+len(ts):], values)
-	return b[:i+len(ts)+len(values)]
+	return append(block, values...)
 }
 
 func unpackBlock(buf []byte) (ts, values []byte, err error) {
@@ -677,37 +629,3 @@ func ZigZagEncode(x int64) uint64 {
 func ZigZagDecode(v uint64) int64 {
 	return int64((v >> 1) ^ uint64((int64(v&1)<<63)>>63))
 }
-func getTimeEncoder(sz int) TimeEncoder {
-	x := timeEncoderPool.Get(sz).(TimeEncoder)
-	x.Reset()
-	return x
-}
-func putTimeEncoder(enc TimeEncoder) { timeEncoderPool.Put(enc) }
-
-func getIntegerEncoder(sz int) IntegerEncoder {
-	x := integerEncoderPool.Get(sz).(IntegerEncoder)
-	x.Reset()
-	return x
-}
-func putIntegerEncoder(enc IntegerEncoder) { integerEncoderPool.Put(enc) }
-
-func getFloatEncoder() *FloatEncoder {
-	x := floatEncoderPool.Get(1024).(*FloatEncoder)
-	x.Reset()
-	return x
-}
-func putFloatEncoder(enc *FloatEncoder) { floatEncoderPool.Put(enc) }
-
-func getStringEncoder(sz int) StringEncoder {
-	x := stringEncoderPool.Get(sz).(StringEncoder)
-	x.Reset()
-	return x
-}
-func putStringEncoder(enc StringEncoder) { stringEncoderPool.Put(enc) }
-
-func getBooleanEncoder(sz int) BooleanEncoder {
-	x := booleanEncoderPool.Get(sz).(BooleanEncoder)
-	x.Reset()
-	return x
-}
-func putBooleanEncoder(enc BooleanEncoder) { booleanEncoderPool.Put(enc) }
