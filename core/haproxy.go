@@ -107,7 +107,7 @@ func (app *HAProxy) reloadConfiguration() {
 		err := app.exec.Run()
 		app.isLoadingConf = false
 		if err == nil {
-			fmt.Printf("HAProxy configuration reloaded")
+			fmt.Println("HAProxy configuration reloaded")
 			return
 		}
 		app.loadTry++
@@ -247,7 +247,6 @@ func hasToBeSkipped(line string, skip bool) bool {
 
 // write backends for main service configuration
 func (app *HAProxy) writeServiceFrontend(file *os.File, serviceMap map[string]*publicService) error {
-	fmt.Println("Update frontend")
 	for _, service := range serviceMap {
 		for extName, intPort := range service.mapping {
 			line := fmt.Sprintf("    use_backend bk_%s%s if { hdr_beg(host) -i %s. }\n", service.name, intPort, extName)
@@ -261,7 +260,6 @@ func (app *HAProxy) writeServiceFrontend(file *os.File, serviceMap map[string]*p
 
 // write backends for main haproxy configuration
 func (app *HAProxy) writeStackFrontend(file *os.File, stackMap map[string]*publicStack) error {
-	fmt.Println("Update frontend")
 	for _, stack := range stackMap {
 		line := fmt.Sprintf("    use_backend bk_%s if { hdr_dom(host) -i .%s. }\n", stack.name, stack.name)
 		file.WriteString(line)
@@ -272,7 +270,6 @@ func (app *HAProxy) writeStackFrontend(file *os.File, stackMap map[string]*publi
 
 // write backends for stack haproxy configuration
 func (app *HAProxy) writeServiceBackend(file *os.File, serviceMap map[string]*publicService) error {
-	fmt.Println("Update backends")
 	for _, service := range serviceMap {
 		for _, intPort := range service.mapping {
 			dnsResolved := app.tryToResolvDNS(service.name)
@@ -301,7 +298,6 @@ func (app *HAProxy) writeServiceBackend(file *os.File, serviceMap map[string]*pu
 
 // write infra backends for main haproxy configuration
 func (app *HAProxy) writeInfraServiceBackend(file *os.File, service defaultInfraService) error {
-	fmt.Println("Update infra backends")
 	line1 := fmt.Sprintf("\nbackend infra_%s\n", service.name)
 	file.WriteString(line1)
 	fmt.Printf(line1)
@@ -328,14 +324,13 @@ func (app *HAProxy) writeInfraServiceBackend(file *os.File, service defaultInfra
 
 // write backends for main haproxy configuration
 func (app *HAProxy) writeStackBackend(file *os.File, stackMap map[string]*publicStack) error {
-	fmt.Println("Update backends")
 	for _, stack := range stackMap {
 		line1 := fmt.Sprintf("\nbackend bk_%s\n", stack.name)
 		file.WriteString(line1)
 		fmt.Printf(line1)
 		//if dns name is not resolved haproxy (v1.6) won't start or accept the new configuration so server is disabled
 		//to be removed when haproxy will fixe this bug
-		if app.tryToResolvDNS(fmt.Sprintf("%s-haproxy:80", stack.name)) {
+		if app.tryToResolvDNS(fmt.Sprintf("%s-haproxy", stack.name)) {
 			line2 := fmt.Sprintf("    server %s_1 %s-haproxy:80 check resolvers docker resolve-prefer ipv4\n", stack.name, stack.name)
 			file.WriteString(line2)
 			fmt.Printf(line2)
@@ -346,7 +341,7 @@ func (app *HAProxy) writeStackBackend(file *os.File, stackMap map[string]*public
 			line3 := fmt.Sprintf("    #server %s_1 %s-haproxy:80 check resolvers docker resolve-prefer ipv4\n", stack.name, stack.name)
 			file.WriteString(line3)
 			fmt.Printf(line3)	
-			app.addDNSNameInRetryList(fmt.Sprintf("%s-haproxy:80", stack.name))		
+			app.addDNSNameInRetryList(fmt.Sprintf("%s-haproxy", stack.name))		
 		}
 	}
 	return nil
