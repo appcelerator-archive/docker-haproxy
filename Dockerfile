@@ -23,9 +23,7 @@ RUN apk update && \
     cd / && rm -rf /go/src /go/pkg /var/cache/apk/* /root/.cache /root/.glide && \
     chmod +x $GOPATH/bin/*
 
-COPY haproxy-main.cfg.tpt /usr/local/etc/haproxy/haproxy-main.cfg.tpt
-COPY haproxy-stack.cfg.tpt /usr/local/etc/haproxy/haproxy-stack.cfg.tpt
-COPY haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg
+COPY haproxy.cfg.tpt /usr/local/etc/haproxy/haproxy.cfg.tpt
 
 HEALTHCHECK --interval=5s --timeout=10s --retries=12 CMD curl http://localhost/healthcheck
 

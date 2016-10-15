@@ -16,6 +16,7 @@ type ControllerConfig struct {
 	stackName       	string
 	stackID         	string
 	noDefaultBackend	bool
+	debug			bool
 }
 
 var conf ControllerConfig
@@ -36,6 +37,7 @@ func (config *ControllerConfig) setDefault() {
 	config.stackName = ""
 	config.stackID = ""
 	config.noDefaultBackend = false
+	config.debug = false
 }
 
 //Update config with env variables
@@ -43,6 +45,7 @@ func (config *ControllerConfig) loadConfigUsingEnvVariable() {
 	config.etcdEndpoints = getStringArrayParameter("ETCD_ENDPOINTS", config.etcdEndpoints)
 	config.stackName = getStringParameter("STACKNAME", config.stackName)
 	config.noDefaultBackend = getBoolParameter("NO_DEFAULT_BACKEND", config.noDefaultBackend)
+	config.debug = getBoolParameter("DEBUG", config.debug)
 }
 
 func (config *ControllerConfig) display(version string) {

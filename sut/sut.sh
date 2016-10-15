@@ -12,7 +12,7 @@ while [[ $r -ne 0 ]]; do
   timeout -t 2 curl -I "$HAPROXY_HOST:$STATS_PORT/$STATS_URL" 2>/dev/null | grep -q "HTTP/1.1 200 OK"
   r=$?
   ((i++))
-  if [[ $i -gt 5 ]]; then break; fi
+  if [[ $i -gt 12 ]]; then break; fi
   echo -n "+"
 done
 if [[ $r -ne 0 ]]; then
