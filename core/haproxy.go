@@ -123,6 +123,7 @@ func (app *HAProxy) reloadConfiguration() {
 // update configuration managing the isUpdatingConf flag
 func (app *HAProxy) updateConfiguration(reload bool) error {
 	app.dnsRetryLoopId++
+	app.dnsNotResolvedList= []string{}
 	err := app.updateConfigurationEff(reload)
 	if err == nil {
 		app.startDNSRevolverLoop(app.dnsRetryLoopId)

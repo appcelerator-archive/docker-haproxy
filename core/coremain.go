@@ -22,8 +22,6 @@ func Run(version string) {
 	initAPI()
 	haproxy.start()
 	time.Sleep(10 * time.Second)
-	fmt.Println("launching HAProxy on updated configuration")
-	haproxy.updateConfiguration(true)
 	for {
 		time.Sleep(3 * time.Second)
 		etcdClient.watchForServicesUpdate()
