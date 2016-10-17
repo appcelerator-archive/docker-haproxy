@@ -152,7 +152,6 @@ container on your host.`,
 					"/proc/timer_list",
 					"/proc/timer_stats",
 					"/proc/sched_debug",
-					"/sys/firmware",
 				},
 				ReadonlyPaths: []string{
 					"/proc/asound",

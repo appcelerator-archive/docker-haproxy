@@ -45,4 +45,3 @@ The currently supported filters are:
 * [stack deploy](stack_deploy.md)
 * [stack rm](stack_rm.md)
 * [stack services](stack_services.md)
-* [stack ls](stack_ls.md)

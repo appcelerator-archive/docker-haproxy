@@ -205,21 +205,21 @@ func ValidateRepoName(name string) error {
 	return nil
 }
 
-func addDigestReference(store reference.Store, ref reference.Named, dgst digest.Digest, id digest.Digest) error {
+func addDigestReference(store reference.Store, ref reference.Named, dgst digest.Digest, imageID image.ID) error {
 	dgstRef, err := reference.WithDigest(ref, dgst)
 	if err != nil {
 		return err
 	}
 
-	if oldTagID, err := store.Get(dgstRef); err == nil {
-		if oldTagID != id {
+	if oldTagImageID, err := store.Get(dgstRef); err == nil {
+		if oldTagImageID != imageID {
 			// Updating digests not supported by reference store
-			logrus.Errorf("Image ID for digest %s changed from %s to %s, cannot update", dgst.String(), oldTagID, id)
+			logrus.Errorf("Image ID for digest %s changed from %s to %s, cannot update", dgst.String(), oldTagImageID, imageID)
 		}
 		return nil
 	} else if err != reference.ErrDoesNotExist {
 		return err
 	}
 
-	return store.AddDigest(dgstRef, id, true)
+	return store.AddDigest(dgstRef, imageID, true)
 }

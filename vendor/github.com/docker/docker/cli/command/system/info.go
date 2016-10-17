@@ -107,11 +107,7 @@ func prettyPrintInfo(dockerCli *command.DockerCli, info types.Info) error {
 			fmt.Fprintf(dockerCli.Out(), " Managers: %d\n", info.Swarm.Managers)
 			fmt.Fprintf(dockerCli.Out(), " Nodes: %d\n", info.Swarm.Nodes)
 			fmt.Fprintf(dockerCli.Out(), " Orchestration:\n")
-			taskHistoryRetentionLimit := int64(0)
-			if info.Swarm.Cluster.Spec.Orchestration.TaskHistoryRetentionLimit != nil {
-				taskHistoryRetentionLimit = *info.Swarm.Cluster.Spec.Orchestration.TaskHistoryRetentionLimit
-			}
-			fmt.Fprintf(dockerCli.Out(), "  Task History Retention Limit: %d\n", taskHistoryRetentionLimit)
+			fmt.Fprintf(dockerCli.Out(), "  Task History Retention Limit: %d\n", info.Swarm.Cluster.Spec.Orchestration.TaskHistoryRetentionLimit)
 			fmt.Fprintf(dockerCli.Out(), " Raft:\n")
 			fmt.Fprintf(dockerCli.Out(), "  Snapshot Interval: %d\n", info.Swarm.Cluster.Spec.Raft.SnapshotInterval)
 			fmt.Fprintf(dockerCli.Out(), "  Heartbeat Tick: %d\n", info.Swarm.Cluster.Spec.Raft.HeartbeatTick)
@@ -139,16 +135,9 @@ func prettyPrintInfo(dockerCli *command.DockerCli, info types.Info) error {
 		fmt.Fprintf(dockerCli.Out(), "Default Runtime: %s\n", info.DefaultRuntime)
 	}
 
-	if info.OSType == "linux" {
-		fmt.Fprintf(dockerCli.Out(), "Security Options:")
-		ioutils.FprintfIfNotEmpty(dockerCli.Out(), " %s", strings.Join(info.SecurityOptions, " "))
-		fmt.Fprintf(dockerCli.Out(), "\n")
-	}
-
-	// Isolation only has meaning on a Windows daemon.
-	if info.OSType == "windows" {
-		fmt.Fprintf(dockerCli.Out(), "Default Isolation: %v\n", info.Isolation)
-	}
+	fmt.Fprintf(dockerCli.Out(), "Security Options:")
+	ioutils.FprintfIfNotEmpty(dockerCli.Out(), " %s", strings.Join(info.SecurityOptions, " "))
+	fmt.Fprintf(dockerCli.Out(), "\n")
 
 	ioutils.FprintfIfNotEmpty(dockerCli.Out(), "Kernel Version: %s\n", info.KernelVersion)
 	ioutils.FprintfIfNotEmpty(dockerCli.Out(), "Operating System: %s\n", info.OperatingSystem)

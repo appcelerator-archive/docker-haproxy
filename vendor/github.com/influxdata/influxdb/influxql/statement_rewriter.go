@@ -26,7 +26,7 @@ func rewriteShowFieldKeysStatement(stmt *ShowFieldKeysStatement) (Statement, err
 			{Expr: &VarRef{Val: "fieldKey"}},
 			{Expr: &VarRef{Val: "fieldType"}},
 		}),
-		Sources:    rewriteSources(stmt.Sources, "_fieldKeys", stmt.Database),
+		Sources:    rewriteSources(stmt.Sources, "_fieldKeys"),
 		Condition:  rewriteSourcesCondition(stmt.Sources, nil),
 		Offset:     stmt.Offset,
 		Limit:      stmt.Limit,
@@ -47,7 +47,6 @@ func rewriteShowMeasurementsStatement(stmt *ShowMeasurementsStatement) (Statemen
 		condition = rewriteSourcesCondition(Sources([]Source{stmt.Source}), stmt.Condition)
 	}
 	return &ShowMeasurementsStatement{
-		Database:   stmt.Database,
 		Condition:  condition,
 		Limit:      stmt.Limit,
 		Offset:     stmt.Offset,
@@ -65,7 +64,7 @@ func rewriteShowSeriesStatement(stmt *ShowSeriesStatement) (Statement, error) {
 		Fields: []*Field{
 			{Expr: &VarRef{Val: "key"}},
 		},
-		Sources:    rewriteSources(stmt.Sources, "_series", stmt.Database),
+		Sources:    rewriteSources(stmt.Sources, "_series"),
 		Condition:  rewriteSourcesCondition(stmt.Sources, stmt.Condition),
 		Offset:     stmt.Offset,
 		Limit:      stmt.Limit,
@@ -141,7 +140,7 @@ func rewriteShowTagKeysStatement(stmt *ShowTagKeysStatement) (Statement, error) 
 		Fields: []*Field{
 			{Expr: &VarRef{Val: "tagKey"}},
 		},
-		Sources:    rewriteSources(stmt.Sources, "_tagKeys", stmt.Database),
+		Sources:    rewriteSources(stmt.Sources, "_tagKeys"),
 		Condition:  rewriteSourcesCondition(stmt.Sources, stmt.Condition),
 		Offset:     stmt.Offset,
 		Limit:      stmt.Limit,
@@ -152,29 +151,22 @@ func rewriteShowTagKeysStatement(stmt *ShowTagKeysStatement) (Statement, error) 
 }
 
 // rewriteSources rewrites sources with previous database and retention policy
-func rewriteSources(sources Sources, measurementName, defaultDatabase string) Sources {
+func rewriteSources(sources Sources, measurementName string) Sources {
 	newSources := Sources{}
 	for _, src := range sources {
 		if src == nil {
 			continue
 		}
 		mm := src.(*Measurement)
-		database := mm.Database
-		if database == "" {
-			database = defaultDatabase
-		}
 		newSources = append(newSources,
 			&Measurement{
-				Database:        database,
+				Database:        mm.Database,
 				RetentionPolicy: mm.RetentionPolicy,
 				Name:            measurementName,
 			})
 	}
 	if len(newSources) <= 0 {
-		return append(newSources, &Measurement{
-			Database: defaultDatabase,
-			Name:     measurementName,
-		})
+		return append(newSources, &Measurement{Name: measurementName})
 	}
 	return newSources
 }

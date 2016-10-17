@@ -24,7 +24,8 @@ const (
 )
 
 // PointsWriter is an interface for writing points to a subscription destination.
-// Only WritePoints() needs to be satisfied.
+// Only WritePoints() needs to be satisfied.  PointsWriter implementations
+// must be goroutine safe.
 type PointsWriter interface {
 	WritePoints(p *coordinator.WritePointsRequest) error
 }
@@ -200,7 +201,7 @@ func (s *Service) createSubscription(se subEntry, mode string, destinations []st
 		bm:      bm,
 		writers: writers,
 		stats:   stats,
-		defaultTags: models.StatisticTags{
+		tags: map[string]string{
 			"database":         se.db,
 			"retention_policy": se.rp,
 			"name":             se.name,
@@ -287,17 +288,19 @@ func (s *Service) updateSubs(wg *sync.WaitGroup) error {
 					return err
 				}
 				cw := chanWriter{
-					writeRequests: make(chan *coordinator.WritePointsRequest, 100),
+					writeRequests: make(chan *coordinator.WritePointsRequest, s.conf.WriteBufferSize),
 					pw:            sub,
 					pointsWritten: &s.stats.PointsWritten,
 					failures:      &s.stats.WriteFailures,
 					logger:        s.Logger,
 				}
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					cw.Run()
-				}()
+				for i := 0; i < s.conf.WriteConcurrency; i++ {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						cw.Run()
+					}()
+				}
 				s.subs[se] = cw
 				s.Logger.Println("added new subscription for", se.db, se.rp)
 			}
@@ -383,11 +386,11 @@ type writerStats struct {
 
 // balances writes across PointsWriters according to BalanceMode
 type balancewriter struct {
-	bm          BalanceMode
-	writers     []PointsWriter
-	stats       []writerStats
-	defaultTags models.StatisticTags
-	i           int
+	bm      BalanceMode
+	writers []PointsWriter
+	stats   []writerStats
+	tags    map[string]string
+	i       int
 }
 
 func (b *balancewriter) WritePoints(p *coordinator.WritePointsRequest) error {
@@ -415,13 +418,13 @@ func (b *balancewriter) WritePoints(p *coordinator.WritePointsRequest) error {
 
 // Statistics returns statistics for periodic monitoring.
 func (b *balancewriter) Statistics(tags map[string]string) []models.Statistic {
+	tags = models.Tags(tags).Merge(b.tags)
+
 	statistics := make([]models.Statistic, len(b.stats))
 	for i := range b.stats {
-		subTags := b.defaultTags.Merge(tags)
-		subTags["destination"] = b.stats[i].dest
 		statistics[i] = models.Statistic{
 			Name: "subscriber",
-			Tags: subTags,
+			Tags: models.Tags(tags).Merge(map[string]string{"destination": b.stats[i].dest}),
 			Values: map[string]interface{}{
 				statPointsWritten: atomic.LoadInt64(&b.stats[i].pointsWritten),
 				statWriteFailures: atomic.LoadInt64(&b.stats[i].failures),

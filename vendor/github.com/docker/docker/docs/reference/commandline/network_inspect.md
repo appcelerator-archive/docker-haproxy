@@ -80,8 +80,7 @@ $ sudo docker network inspect bridge
             "com.docker.network.bridge.host_binding_ipv4": "0.0.0.0",
             "com.docker.network.bridge.name": "docker0",
             "com.docker.network.driver.mtu": "1500"
-        },
-        "Labels": {}
+        }
     }
 ]
 ```
@@ -108,8 +107,7 @@ $ docker network inspect simple-network
             ]
         },
         "Containers": {},
-        "Options": {},
-        "Labels": {}
+        "Options": {}
     }
 ]
 ```

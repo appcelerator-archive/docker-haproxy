@@ -1,0 +1,70 @@
+global
+    maxconn 256
+    stats socket /var/run/haproxy.sock mode 600 level admin
+    stats timeout 2m
+
+resolvers docker
+    nameserver dnsmasq 127.0.0.1:53
+    resolve_retries       3
+    timeout retry         3s
+    hold valid           10s    
+
+
+defaults
+    mode http
+    log global
+    option httplog
+    timeout connect 5000ms
+    timeout client 50000ms
+    timeout server 50000ms
+
+
+frontend monitoring
+    bind *:8082
+    default_backend private_monitoring
+
+frontend stack_http-in
+    bind *:80
+    monitor-uri /healthcheck
+[frontend]
+    default_backend controler_api    
+
+frontend main_http-in
+    bind *:80
+    #monitoring
+    monitor-uri /healthcheck
+    #ACAO
+    capture request header origin len 128
+    http-response add-header Access-Control-Allow-Origin %[capture.req.hdr(0)] if { capture.req.hdr(0) -m found }
+    rspadd Access-Control-Allow-Credentials:\ true if { capture.req.hdr(0) -m found }
+    rspadd Access-Control-Allow-Headers:\ Origin,\ X-Requested-With,\ Content-Type,\ Origin,\ User-Agent,\ If-Modified-Since,\ Cache-Control,\ Accept if { capture.req.hdr(0) -m found }
+    rspadd Access-Control-Allow-Methods:\ GET,\ POST,\ PUT,\ DELETE,\ OPTIONS if { capture.req.hdr(0) -m found }
+    rspadd Access-Control-Max-Age:\ 1728000 if { capture.req.hdr(0) -m found }
+    #infra
+    use_backend infra_amp-ui if { hdr_beg(host) -i ui. }
+    use_backend infra_elasticsearch if { hdr_beg(host) -i elasticsearch. }
+    use_backend infra_grafana if { hdr_beg(host) -i grafana. }
+    use_backend infra_registry if { hdr_beg(host) -i registry. }
+[frontend]
+    default_backend controler_api    
+
+frontend main_registry
+    bind *:5000
+    default_backend infra_registry
+
+frontend main_grpc
+    mode tcp
+    #bind *:8080 alpn h2
+    #use_backend amplifier_server if { ssl_fc_alpn -i h2 }
+    bind *:8080 npn spdy/2 alpn h2,http/1.1
+    default_backend infra_amplifier
+
+backend controler_api
+    server controler_api1 localhost:8090
+
+backend private_monitoring
+    stats enable
+    stats uri     /admin?stats
+    stats realm   Haproxy\ Statistics
+
+[backends]    

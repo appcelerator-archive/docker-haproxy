@@ -41,9 +41,6 @@ func notifySystem() {
 // notifyShutdown is called after the daemon shuts down but before the process exits.
 func notifyShutdown(err error) {
 	if service != nil {
-		if err != nil {
-			logrus.Fatal(err)
-		}
 		service.stopped(err)
 	}
 }

@@ -11,7 +11,6 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/opencontainers/runc/libcontainer/label"
-	"github.com/pkg/errors"
 )
 
 // DefaultDriverName is the driver name used for the driver
@@ -115,8 +114,7 @@ func (m *MountPoint) Setup(mountLabel string, rootUID, rootGID int) (string, err
 		if m.ID == "" {
 			m.ID = stringid.GenerateNonCryptoID()
 		}
-		path, err := m.Volume.Mount(m.ID)
-		return path, errors.Wrapf(err, "error while mounting volume '%s'", m.Source)
+		return m.Volume.Mount(m.ID)
 	}
 	if len(m.Source) == 0 {
 		return "", fmt.Errorf("Unable to setup mount point, neither source nor volume defined")
@@ -128,14 +126,14 @@ func (m *MountPoint) Setup(mountLabel string, rootUID, rootGID int) (string, err
 		if err := idtools.MkdirAllNewAs(m.Source, 0755, rootUID, rootGID); err != nil {
 			if perr, ok := err.(*os.PathError); ok {
 				if perr.Err != syscall.ENOTDIR {
-					return "", errors.Wrapf(err, "error while creating mount source path '%s'", m.Source)
+					return "", err
 				}
 			}
 		}
 	}
 	if label.RelabelNeeded(m.Mode) {
 		if err := label.Relabel(m.Source, mountLabel, label.IsShared(m.Mode)); err != nil {
-			return "", errors.Wrapf(err, "error setting label on mount source '%s'", m.Source)
+			return "", err
 		}
 	}
 	return m.Source, nil

@@ -5,6 +5,8 @@ import (
 )
 
 const (
+	tableKey = "table"
+
 	imageHeader        = "IMAGE"
 	createdSinceHeader = "CREATED"
 	createdAtHeader    = "CREATED AT"
@@ -16,25 +18,22 @@ const (
 )
 
 type subContext interface {
-	FullHeader() string
-	AddHeader(header string)
+	fullHeader() string
+	addHeader(header string)
 }
 
-// HeaderContext provides the subContext interface for managing headers
-type HeaderContext struct {
+type baseSubContext struct {
 	header []string
 }
 
-// FullHeader returns the header as a string
-func (c *HeaderContext) FullHeader() string {
+func (c *baseSubContext) fullHeader() string {
 	if c.header == nil {
 		return ""
 	}
 	return strings.Join(c.header, "\t")
 }
 
-// AddHeader adds another column to the header
-func (c *HeaderContext) AddHeader(header string) {
+func (c *baseSubContext) addHeader(header string) {
 	if c.header == nil {
 		c.header = []string{}
 	}

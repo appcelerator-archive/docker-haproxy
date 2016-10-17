@@ -103,8 +103,6 @@ type ContainerOptions struct {
 	healthRetries     int
 	runtime           string
 	autoRemove        bool
-	init              bool
-	initPath          string
 
 	Image string
 	Args  []string
@@ -245,9 +243,6 @@ func AddFlags(flags *pflag.FlagSet) *ContainerOptions {
 	flags.StringVar(&copts.shmSize, "shm-size", "", "Size of /dev/shm, default value is 64MB")
 	flags.StringVar(&copts.utsMode, "uts", "", "UTS namespace to use")
 	flags.StringVar(&copts.runtime, "runtime", "", "Runtime to use for this container")
-
-	flags.BoolVar(&copts.init, "init", false, "Run an init inside the container that forwards signals and reaps processes")
-	flags.StringVar(&copts.initPath, "init-path", "", "Path to the docker-init binary")
 	return copts
 }
 
@@ -596,11 +591,6 @@ func Parse(flags *pflag.FlagSet, copts *ContainerOptions) (*container.Config, *c
 		Tmpfs:          tmpfs,
 		Sysctls:        copts.sysctls.GetAll(),
 		Runtime:        copts.runtime,
-	}
-
-	// only set this value if the user provided the flag, else it should default to nil
-	if flags.Changed("init") {
-		hostConfig.Init = &copts.init
 	}
 
 	// When allocating stdin in attached mode, close stdin at client disconnect

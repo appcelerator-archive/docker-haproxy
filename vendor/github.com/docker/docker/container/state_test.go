@@ -30,9 +30,7 @@ func TestStateRunStop(t *testing.T) {
 			atomic.StoreInt64(&exit, int64(exitCode))
 			close(stopped)
 		}()
-		s.Lock()
-		s.SetStopped(&ExitStatus{ExitCode: i})
-		s.Unlock()
+		s.SetStoppedLocking(&ExitStatus{ExitCode: i})
 		if s.IsRunning() {
 			t.Fatal("State is running")
 		}
@@ -72,9 +70,7 @@ func TestStateTimeoutWait(t *testing.T) {
 		t.Log("Stop callback fired")
 	}
 
-	s.Lock()
-	s.SetStopped(&ExitStatus{ExitCode: 1})
-	s.Unlock()
+	s.SetStoppedLocking(&ExitStatus{ExitCode: 1})
 
 	stopped = make(chan struct{})
 	go func() {

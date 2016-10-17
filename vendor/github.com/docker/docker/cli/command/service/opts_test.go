@@ -76,7 +76,7 @@ func TestMountOptString(t *testing.T) {
 	assert.Equal(t, mount.String(), expected)
 }
 
-func TestMountOptSetBindNoErrorBind(t *testing.T) {
+func TestMountOptSetNoError(t *testing.T) {
 	for _, testcase := range []string{
 		// tests several aliases that should have same result.
 		"type=bind,target=/target,source=/source",
@@ -92,28 +92,6 @@ func TestMountOptSetBindNoErrorBind(t *testing.T) {
 		assert.Equal(t, len(mounts), 1)
 		assert.Equal(t, mounts[0], mounttypes.Mount{
 			Type:   mounttypes.TypeBind,
-			Source: "/source",
-			Target: "/target",
-		})
-	}
-}
-
-func TestMountOptSetVolumeNoError(t *testing.T) {
-	for _, testcase := range []string{
-		// tests several aliases that should have same result.
-		"type=volume,target=/target,source=/source",
-		"type=volume,src=/source,dst=/target",
-		"type=volume,source=/source,dst=/target",
-		"type=volume,src=/source,target=/target",
-	} {
-		var mount MountOpt
-
-		assert.NilError(t, mount.Set(testcase))
-
-		mounts := mount.Value()
-		assert.Equal(t, len(mounts), 1)
-		assert.Equal(t, mounts[0], mounttypes.Mount{
-			Type:   mounttypes.TypeVolume,
 			Source: "/source",
 			Target: "/target",
 		})
@@ -163,18 +141,13 @@ func TestMountOptDefaultEnableReadOnly(t *testing.T) {
 	assert.Equal(t, m.values[0].ReadOnly, true)
 
 	m = MountOpt{}
-	assert.NilError(t, m.Set("type=bind,target=/foo,source=/foo,readonly=true"))
-	assert.Equal(t, m.values[0].ReadOnly, true)
-
-	m = MountOpt{}
 	assert.NilError(t, m.Set("type=bind,target=/foo,source=/foo,readonly=0"))
 	assert.Equal(t, m.values[0].ReadOnly, false)
 }
 
 func TestMountOptVolumeNoCopy(t *testing.T) {
 	var m MountOpt
-	assert.NilError(t, m.Set("type=volume,target=/foo,volume-nocopy"))
-	assert.Equal(t, m.values[0].Source, "")
+	assert.Error(t, m.Set("type=volume,target=/foo,volume-nocopy"), "source is required")
 
 	m = MountOpt{}
 	assert.NilError(t, m.Set("type=volume,target=/foo,source=foo"))

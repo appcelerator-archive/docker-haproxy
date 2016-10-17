@@ -1,7 +1,6 @@
 package types
 
 import (
-	"io"
 	"os"
 	"time"
 
@@ -183,13 +182,6 @@ type ContainerPathStat struct {
 	LinkTarget string      `json:"linkTarget"`
 }
 
-// ContainerStats contains response of Remote API:
-// GET "/stats"
-type ContainerStats struct {
-	Body   io.ReadCloser `json:"body"`
-	OSType string        `json:"ostype"`
-}
-
 // ContainerProcessList contains response of Remote API:
 // GET "/containers/{name:.*}/top"
 type ContainerProcessList struct {
@@ -268,7 +260,6 @@ type Info struct {
 	// running when the daemon is shutdown or upon daemon start if
 	// running containers are detected
 	LiveRestoreEnabled bool
-	Isolation          container.Isolation
 }
 
 // PluginsInfo is a temp struct holding Plugins name
@@ -447,7 +438,7 @@ type VolumesListResponse struct {
 	Warnings []string  // Warnings is a list of warnings that occurred when getting the list from the volume drivers
 }
 
-// VolumeCreateRequest contains the request for the remote API:
+// VolumeCreateRequest contains the response for the remote API:
 // POST "/volumes/create"
 type VolumeCreateRequest struct {
 	Name       string            // Name is the requested name of the volume

@@ -6,43 +6,55 @@ package windowsoci
 
 import "fmt"
 
-// Spec is the base configuration for the container.
-type Spec struct {
-	// Version of the Open Container Runtime Specification with which the bundle complies.
-	Version string `json:"ociVersion"`
-	// Platform specifies the configuration's target platform.
-	Platform Platform `json:"platform"`
-	// Process configures the container process.
-	Process Process `json:"process"`
-	// Root configures the container's root filesystem.
-	Root Root `json:"root"`
-	// Hostname configures the container's hostname.
-	Hostname string `json:"hostname,omitempty"`
-	// Mounts configures additional mounts (on top of Root).
-	Mounts []Mount `json:"mounts,omitempty"`
-	// Hooks configures callbacks for container lifecycle events.
-	Hooks Hooks `json:"hooks"`
-	// Annotations contains arbitrary metadata for the container.
-	Annotations map[string]string `json:"annotations,omitempty"`
+// WindowsSpec is the full specification for Windows containers.
+type WindowsSpec struct {
+	Spec
 
-	// Linux is platform specific configuration for Linux based containers.
-	Linux *Linux `json:"linux,omitempty" platform:"linux"`
-	// Solaris is platform specific configuration for Solaris containers.
-	Solaris *Solaris `json:"solaris,omitempty" platform:"solaris"`
-	// Windows is platform specific configuration for Windows based containers, including Hyper-V containers.
-	Windows *Windows `json:"windows,omitempty" platform:"windows"`
+	// Windows is platform specific configuration for Windows based containers.
+	Windows Windows `json:"windows"`
+}
+
+// Spec is the base configuration for the container.  It specifies platform
+// independent configuration. This information must be included when the
+// bundle is packaged for distribution.
+type Spec struct {
+
+	// Version is the version of the specification that is supported.
+	Version string `json:"ociVersion"`
+	// Platform is the host information for OS and Arch.
+	Platform Platform `json:"platform"`
+	// Process is the container's main process.
+	Process Process `json:"process"`
+	// Root is the root information for the container's filesystem.
+	Root Root `json:"root"`
+	// Hostname is the container's host name.
+	Hostname string `json:"hostname,omitempty"`
+	// Mounts profiles configuration for adding mounts to the container's filesystem.
+	Mounts []Mount `json:"mounts"`
 }
 
 // Windows contains platform specific configuration for Windows based containers.
 type Windows struct {
 	// Resources contains information for handling resource constraints for the container
-	Resources *WindowsResources `json:"resources,omitempty"`
+	Resources *Resources `json:"resources,omitempty"`
+	// Networking contains the platform specific network settings for the container.
+	Networking *Networking `json:"networking,omitempty"`
+	// FirstStart is used for an optimization on first boot of Windows
+	FirstStart bool `json:"first_start,omitempty"`
+	// LayerFolder is the path to the current layer folder
+	LayerFolder string `json:"layer_folder,omitempty"`
+	// Layer paths of the parent layers
+	LayerPaths []string `json:"layer_paths,omitempty"`
+	// HvRuntime contains settings specific to Hyper-V containers, omitted if not using Hyper-V isolation
+	HvRuntime *HvRuntime `json:"hv_runtime,omitempty"`
 }
 
 // Process contains information to start a specific application inside the container.
 type Process struct {
-	// Terminal creates an interactive terminal for the container.
-	Terminal bool `json:"terminal,omitempty"`
+	// Terminal indicates if stderr should NOT be attached for the container.
+	Terminal bool `json:"terminal"`
+	// ConsoleSize contains the initial h,w of the console size
+	InitialConsoleSize [2]int `json:"-"`
 	// User specifies user information for the process.
 	User User `json:"user"`
 	// Args specifies the binary and arguments for the application to execute.
@@ -52,36 +64,11 @@ type Process struct {
 	// Cwd is the current working directory for the process and must be
 	// relative to the container's root.
 	Cwd string `json:"cwd"`
-	// Capabilities are Linux capabilities that are kept for the container.
-	Capabilities []string `json:"capabilities,omitempty" platform:"linux"`
-	// Rlimits specifies rlimit options to apply to the process.
-	Rlimits []Rlimit `json:"rlimits,omitempty" platform:"linux"`
-	// NoNewPrivileges controls whether additional privileges could be gained by processes in the container.
-	NoNewPrivileges bool `json:"noNewPrivileges,omitempty" platform:"linux"`
-	// ApparmorProfile specifies the apparmor profile for the container.
-	ApparmorProfile string `json:"apparmorProfile,omitempty" platform:"linux"`
-	// SelinuxLabel specifies the selinux context that the container process is run as.
-	SelinuxLabel string `json:"selinuxLabel,omitempty" platform:"linux"`
-	// ConsoleSize contains the initial size of the console.
-	ConsoleSize Box `json:"consoleSize" platform:"windows"`
 }
 
-// Box specifies height and width dimensions. Used for sizing of a console.
-type Box struct {
-	Height uint
-	Width  uint
-}
-
-// User specifies specific user (and group) information for the container process.
+// User contains the user information for Windows
 type User struct {
-	// UID is the user id.
-	UID uint32 `json:"uid" platform:"linux,solaris"`
-	// GID is the group id.
-	GID uint32 `json:"gid" platform:"linux,solaris"`
-	// AdditionalGids are additional group ids set for the container's process.
-	AdditionalGids []uint32 `json:"additionalGids,omitempty" platform:"linux,solaris"`
-	// Username is the user name.
-	Username string `json:"username,omitempty" platform:"windows"`
+	User string `json:"user,omitempty"`
 }
 
 // Root contains information about the container's root filesystem on the host.
@@ -99,6 +86,8 @@ type Platform struct {
 	OS string `json:"os"`
 	// Arch is the architecture
 	Arch string `json:"arch"`
+	// OSVersion is the version of the operating system.
+	OSVersion string `json:"os.version,omitempty"`
 }
 
 // Mount specifies a mount for a container.
@@ -107,15 +96,27 @@ type Mount struct {
 	Destination string `json:"destination"`
 	// Type specifies the mount kind.
 	Type string `json:"type"`
-	// Source specifies the source path of the mount.  In the case of bind mounts on
-	// Linux based systems this would be the file on the host.
+	// Source specifies the source path of the mount.  In the case of bind mounts
+	// this would be the file on the host.
 	Source string `json:"source"`
-	// Options are fstab style mount options.
-	Options []string `json:"options,omitempty"`
+	// Readonly specifies if the mount should be read-only
+	Readonly bool `json:"readonly"`
 }
 
-// WindowsStorage contains storage resource management settings
-type WindowsStorage struct {
+// HvRuntime contains settings specific to Hyper-V containers
+type HvRuntime struct {
+	// ImagePath is the path to the Utility VM image for this container
+	ImagePath string `json:"image_path,omitempty"`
+}
+
+// Networking contains the platform specific network settings for the container
+type Networking struct {
+	// List of endpoints to be attached to the container
+	EndpointList []string `json:"endpoints,omitempty"`
+}
+
+// Storage contains storage resource management settings
+type Storage struct {
 	// Specifies maximum Iops for the system drive
 	Iops *uint64 `json:"iops,omitempty"`
 	// Specifies maximum bytes per second for the system drive
@@ -124,16 +125,16 @@ type WindowsStorage struct {
 	SandboxSize *uint64 `json:"sandbox_size,omitempty"`
 }
 
-// WindowsMemory contains memory settings for the container
-type WindowsMemory struct {
+// Memory contains memory settings for the container
+type Memory struct {
 	// Memory limit (in bytes).
 	Limit *int64 `json:"limit,omitempty"`
 	// Memory reservation (in bytes).
 	Reservation *uint64 `json:"reservation,omitempty"`
 }
 
-// WindowsCPU contains information for cpu resource management
-type WindowsCPU struct {
+// CPU contains information for cpu resource management
+type CPU struct {
 	// Number of CPUs available to the container. This is an appoximation for Windows Server Containers.
 	Count *uint64 `json:"count,omitempty"`
 	// CPU shares (relative weight (ratio) vs. other containers with cpu shares). Range is from 1 to 10000.
@@ -142,24 +143,24 @@ type WindowsCPU struct {
 	Percent *int64 `json:"percent,omitempty"`
 }
 
-// WindowsNetwork contains network resource management information
-type WindowsNetwork struct {
+// Network contains network resource management information
+type Network struct {
 	// Bandwidth is the maximum egress bandwidth in bytes per second
 	Bandwidth *uint64 `json:"bandwidth,omitempty"`
 }
 
-// WindowsResources has container runtime resource constraints
+// Resources has container runtime resource constraints
 // TODO Windows containerd. This structure needs ratifying with the old resources
 // structure used on Windows and the latest OCI spec.
-type WindowsResources struct {
+type Resources struct {
 	// Memory restriction configuration
-	Memory *WindowsMemory `json:"memory,omitempty"`
+	Memory *Memory `json:"memory,omitempty"`
 	// CPU resource restriction configuration
-	CPU *WindowsCPU `json:"cpu,omitempty"`
+	CPU *CPU `json:"cpu,omitempty"`
 	// Storage restriction configuration
-	Storage *WindowsStorage `json:"storage,omitempty"`
+	Storage *Storage `json:"storage,omitempty"`
 	// Network restriction configuration
-	Network *WindowsNetwork `json:"network,omitempty"`
+	Network *Network `json:"network,omitempty"`
 }
 
 const (
@@ -176,24 +177,3 @@ const (
 
 // Version is the specification version that the package types support.
 var Version = fmt.Sprintf("%d.%d.%d%s (Windows)", VersionMajor, VersionMinor, VersionPatch, VersionDev)
-
-//
-// Temporary structures. Ultimately this whole file will be removed.
-//
-
-// Linux contains platform specific configuration for Linux based containers.
-type Linux struct {
-}
-
-// Solaris contains platform specific configuration for Solaris application containers.
-type Solaris struct {
-}
-
-// Hooks for container setup and teardown
-type Hooks struct {
-}
-
-// Rlimit type and restrictions. Placeholder only to support the Process structure.
-// Not used on Windows, only present for compilation purposes.
-type Rlimit struct {
-}

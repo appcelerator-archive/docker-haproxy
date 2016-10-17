@@ -235,6 +235,10 @@ func (m *MountOpt) Set(value string) error {
 		return fmt.Errorf("target is required")
 	}
 
+	if mount.VolumeOptions != nil && mount.Source == "" {
+		return fmt.Errorf("source is required when specifying volume-* options")
+	}
+
 	if mount.Type == mounttypes.TypeBind && mount.VolumeOptions != nil {
 		return fmt.Errorf("cannot mix 'volume-*' options with mount type '%s'", mounttypes.TypeBind)
 	}

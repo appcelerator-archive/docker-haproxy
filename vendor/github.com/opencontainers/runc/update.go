@@ -155,39 +155,33 @@ other options are ignored.
 				r.CPU.Mems = &val
 			}
 
-			for _, pair := range []struct {
-				opt  string
-				dest *uint64
-			}{
-
-				{"cpu-period", r.CPU.Period},
-				{"cpu-quota", r.CPU.Quota},
-				{"cpu-share", r.CPU.Shares},
+			for opt, dest := range map[string]*uint64{
+				"cpu-period": r.CPU.Period,
+				"cpu-quota":  r.CPU.Quota,
+				"cpu-share":  r.CPU.Shares,
 			} {
-				if val := context.String(pair.opt); val != "" {
+				if val := context.String(opt); val != "" {
 					var err error
-					*pair.dest, err = strconv.ParseUint(val, 10, 64)
+					*dest, err = strconv.ParseUint(val, 10, 64)
 					if err != nil {
-						return fmt.Errorf("invalid value for %s: %s", pair.opt, err)
+						return fmt.Errorf("invalid value for %s: %s", opt, err)
 					}
 				}
 			}
-			for _, pair := range []struct {
-				opt  string
-				dest *uint64
-			}{
-				{"kernel-memory", r.Memory.Kernel},
-				{"kernel-memory-tcp", r.Memory.KernelTCP},
-				{"memory", r.Memory.Limit},
-				{"memory-reservation", r.Memory.Reservation},
-				{"memory-swap", r.Memory.Swap},
+
+			for opt, dest := range map[string]*uint64{
+				"kernel-memory":      r.Memory.Kernel,
+				"kernel-memory-tcp":  r.Memory.KernelTCP,
+				"memory":             r.Memory.Limit,
+				"memory-reservation": r.Memory.Reservation,
+				"memory-swap":        r.Memory.Swap,
 			} {
-				if val := context.String(pair.opt); val != "" {
+				if val := context.String(opt); val != "" {
 					v, err := units.RAMInBytes(val)
 					if err != nil {
-						return fmt.Errorf("invalid value for %s: %s", pair.opt, err)
+						return fmt.Errorf("invalid value for %s: %s", opt, err)
 					}
-					*pair.dest = uint64(v)
+					*dest = uint64(v)
 				}
 			}
 		}

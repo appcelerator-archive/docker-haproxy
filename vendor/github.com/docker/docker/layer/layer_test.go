@@ -39,7 +39,7 @@ func newVFSGraphDriver(td string) (graphdriver.Driver, error) {
 		},
 	}
 
-	return graphdriver.GetDriver("vfs", td, nil, uidMap, gidMap, nil)
+	return graphdriver.GetDriver("vfs", td, nil, uidMap, gidMap)
 }
 
 func newTestGraphDriver(t *testing.T) (graphdriver.Driver, func()) {

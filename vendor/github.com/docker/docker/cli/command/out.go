@@ -48,7 +48,7 @@ func (o *OutStream) RestoreTerminal() {
 }
 
 // GetTtySize returns the height and width in characters of the tty
-func (o *OutStream) GetTtySize() (uint, uint) {
+func (o *OutStream) GetTtySize() (int, int) {
 	if !o.isTerminal {
 		return 0, 0
 	}
@@ -59,7 +59,7 @@ func (o *OutStream) GetTtySize() (uint, uint) {
 			return 0, 0
 		}
 	}
-	return uint(ws.Height), uint(ws.Width)
+	return int(ws.Height), int(ws.Width)
 }
 
 // NewOutStream returns a new OutStream object from a Writer

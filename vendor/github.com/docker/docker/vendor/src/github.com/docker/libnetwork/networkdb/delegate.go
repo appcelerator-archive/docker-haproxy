@@ -3,7 +3,6 @@ package networkdb
 import (
 	"fmt"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/Sirupsen/logrus"
@@ -16,76 +15,6 @@ type delegate struct {
 
 func (d *delegate) NodeMeta(limit int) []byte {
 	return []byte{}
-}
-
-func (nDB *NetworkDB) checkAndGetNode(nEvent *NodeEvent) *node {
-	nDB.Lock()
-	defer nDB.Unlock()
-
-	for _, nodes := range []map[string]*node{
-		nDB.failedNodes,
-		nDB.leftNodes,
-		nDB.nodes,
-	} {
-		if n, ok := nodes[nEvent.NodeName]; ok {
-			if n.ltime >= nEvent.LTime {
-				return nil
-			}
-
-			delete(nodes, n.Name)
-			return n
-		}
-	}
-
-	return nil
-}
-
-func (nDB *NetworkDB) purgeSameNode(n *node) {
-	nDB.Lock()
-	defer nDB.Unlock()
-
-	prefix := strings.Split(n.Name, "-")[0]
-	for _, nodes := range []map[string]*node{
-		nDB.failedNodes,
-		nDB.leftNodes,
-		nDB.nodes,
-	} {
-		var nodeNames []string
-		for name, node := range nodes {
-			if strings.HasPrefix(name, prefix) && n.Addr.Equal(node.Addr) {
-				nodeNames = append(nodeNames, name)
-			}
-		}
-
-		for _, name := range nodeNames {
-			delete(nodes, name)
-		}
-	}
-}
-
-func (nDB *NetworkDB) handleNodeEvent(nEvent *NodeEvent) bool {
-	n := nDB.checkAndGetNode(nEvent)
-	if n == nil {
-		return false
-	}
-
-	nDB.purgeSameNode(n)
-	n.ltime = nEvent.LTime
-
-	switch nEvent.Type {
-	case NodeEventTypeJoin:
-		nDB.Lock()
-		nDB.nodes[n.Name] = n
-		nDB.Unlock()
-		return true
-	case NodeEventTypeLeave:
-		nDB.Lock()
-		nDB.leftNodes[n.Name] = n
-		nDB.Unlock()
-		return true
-	}
-
-	return false
 }
 
 func (nDB *NetworkDB) handleNetworkEvent(nEvent *NetworkEvent) bool {
@@ -259,27 +188,6 @@ func (nDB *NetworkDB) handleTableMessage(buf []byte, isBulkSync bool) {
 	}
 }
 
-func (nDB *NetworkDB) handleNodeMessage(buf []byte) {
-	var nEvent NodeEvent
-	if err := proto.Unmarshal(buf, &nEvent); err != nil {
-		logrus.Errorf("Error decoding node event message: %v", err)
-		return
-	}
-
-	if rebroadcast := nDB.handleNodeEvent(&nEvent); rebroadcast {
-		var err error
-		buf, err = encodeRawMessage(MessageTypeNodeEvent, buf)
-		if err != nil {
-			logrus.Errorf("Error marshalling gossip message for node event rebroadcast: %v", err)
-			return
-		}
-
-		nDB.nodeBroadcasts.QueueBroadcast(&nodeEventMessage{
-			msg: buf,
-		})
-	}
-}
-
 func (nDB *NetworkDB) handleNetworkMessage(buf []byte) {
 	var nEvent NetworkEvent
 	if err := proto.Unmarshal(buf, &nEvent); err != nil {
@@ -348,8 +256,6 @@ func (nDB *NetworkDB) handleMessage(buf []byte, isBulkSync bool) {
 	}
 
 	switch mType {
-	case MessageTypeNodeEvent:
-		nDB.handleNodeMessage(data)
 	case MessageTypeNetworkEvent:
 		nDB.handleNetworkMessage(data)
 	case MessageTypeTableEvent:
@@ -372,27 +278,15 @@ func (d *delegate) NotifyMsg(buf []byte) {
 }
 
 func (d *delegate) GetBroadcasts(overhead, limit int) [][]byte {
-	msgs := d.nDB.networkBroadcasts.GetBroadcasts(overhead, limit)
-	msgs = append(msgs, d.nDB.nodeBroadcasts.GetBroadcasts(overhead, limit)...)
-	return msgs
+	return d.nDB.networkBroadcasts.GetBroadcasts(overhead, limit)
 }
 
 func (d *delegate) LocalState(join bool) []byte {
-	if join {
-		// Update all the local node/network state to a new time to
-		// force update on the node we are trying to rejoin, just in
-		// case that node has these in leaving state still. This is
-		// facilitate fast convergence after recovering from a gossip
-		// failure.
-		d.nDB.updateLocalNetworkTime()
-	}
-
 	d.nDB.RLock()
 	defer d.nDB.RUnlock()
 
 	pp := NetworkPushPull{
-		LTime:    d.nDB.networkClock.Time(),
-		NodeName: d.nDB.config.NodeName,
+		LTime: d.nDB.networkClock.Time(),
 	}
 
 	for name, nn := range d.nDB.networks {
@@ -438,12 +332,9 @@ func (d *delegate) MergeRemoteState(buf []byte, isJoin bool) {
 		return
 	}
 
-	nodeEvent := &NodeEvent{
-		LTime:    pp.LTime,
-		NodeName: pp.NodeName,
-		Type:     NodeEventTypeJoin,
+	if pp.LTime > 0 {
+		d.nDB.networkClock.Witness(pp.LTime)
 	}
-	d.nDB.handleNodeEvent(nodeEvent)
 
 	for _, n := range pp.Networks {
 		nEvent := &NetworkEvent{

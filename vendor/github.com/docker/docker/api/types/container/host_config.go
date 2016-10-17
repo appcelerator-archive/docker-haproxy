@@ -313,7 +313,7 @@ type HostConfig struct {
 	Runtime         string            `json:",omitempty"` // Runtime to use with this container
 
 	// Applicable to Windows
-	ConsoleSize [2]uint   // Initial console size (height,width)
+	ConsoleSize [2]int    // Initial console size
 	Isolation   Isolation // Isolation technology of the container (eg default, hyperv)
 
 	// Contains container's resources (cgroups, ulimits)
@@ -321,10 +321,4 @@ type HostConfig struct {
 
 	// Mounts specs used by the container
 	Mounts []mount.Mount `json:",omitempty"`
-
-	// Run a custom init inside the container, if null, use the daemon's configured settings
-	Init *bool `json:",omitempty"`
-
-	// Custom init path
-	InitPath string `json:",omitempty"`
 }

@@ -1,6 +1,7 @@
 package monitor // import "github.com/influxdata/influxdb/monitor"
 
 import (
+	"bytes"
 	"errors"
 	"expvar"
 	"fmt"
@@ -210,7 +211,10 @@ func (m *Monitor) Statistics(tags map[string]string) ([]*Statistic, error) {
 		}
 
 		statistic := &Statistic{
-			Statistic: models.NewStatistic(""),
+			Statistic: models.Statistic{
+				Tags:   make(map[string]string),
+				Values: make(map[string]interface{}),
+			},
 		}
 
 		// Add any supplied tags.
@@ -275,7 +279,11 @@ func (m *Monitor) Statistics(tags map[string]string) ([]*Statistic, error) {
 
 	// Add Go memstats.
 	statistic := &Statistic{
-		Statistic: models.NewStatistic("runtime"),
+		Statistic: models.Statistic{
+			Name:   "runtime",
+			Tags:   make(map[string]string),
+			Values: make(map[string]interface{}),
+		},
 	}
 
 	// Add any supplied tags to Go memstats
@@ -413,7 +421,7 @@ func (m *Monitor) storeStatistics() {
 
 			points := make(models.Points, 0, len(stats))
 			for _, s := range stats {
-				pt, err := models.NewPoint(s.Name, models.NewTags(s.Tags), s.Values, now)
+				pt, err := models.NewPoint(s.Name, s.Tags, s.Values, now)
 				if err != nil {
 					m.Logger.Printf("Dropping point %v: %v", s.Name, err)
 					return
@@ -455,7 +463,10 @@ type Statistics []*Statistic
 
 func (a Statistics) Len() int { return len(a) }
 func (a Statistics) Less(i, j int) bool {
-	return a[i].Name < a[j].Name
+	if a[i].Name != a[j].Name {
+		return a[i].Name < a[j].Name
+	}
+	return bytes.Compare(a[i].Tags.HashKey(), a[j].Tags.HashKey()) < 0
 }
 func (a Statistics) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 

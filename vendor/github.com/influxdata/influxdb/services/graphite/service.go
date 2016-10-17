@@ -59,9 +59,9 @@ type Service struct {
 	batcher *tsdb.PointBatcher
 	parser  *Parser
 
-	logger      *log.Logger
-	stats       *Statistics
-	defaultTags models.StatisticTags
+	logger   *log.Logger
+	stats    *Statistics
+	statTags models.Tags
 
 	tcpConnectionsMu sync.Mutex
 	tcpConnections   map[string]*tcpConnection
@@ -106,7 +106,7 @@ func NewService(c Config) (*Service, error) {
 		batchTimeout:    time.Duration(d.BatchTimeout),
 		logger:          log.New(os.Stderr, fmt.Sprintf("[graphite] %s ", d.BindAddress), log.LstdFlags),
 		stats:           &Statistics{},
-		defaultTags:     models.StatisticTags{"proto": d.Protocol, "bind": d.BindAddress},
+		statTags:        map[string]string{"proto": d.Protocol, "bind": d.BindAddress},
 		tcpConnections:  make(map[string]*tcpConnection),
 		done:            make(chan struct{}),
 		diagsKey:        strings.Join([]string{"graphite", d.Protocol, d.BindAddress}, ":"),
@@ -234,7 +234,7 @@ type Statistics struct {
 func (s *Service) Statistics(tags map[string]string) []models.Statistic {
 	return []models.Statistic{{
 		Name: "graphite",
-		Tags: s.defaultTags.Merge(tags),
+		Tags: s.statTags.Merge(tags),
 		Values: map[string]interface{}{
 			statPointsReceived:      atomic.LoadInt64(&s.stats.PointsReceived),
 			statBytesReceived:       atomic.LoadInt64(&s.stats.BytesReceived),

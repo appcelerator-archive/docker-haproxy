@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewCheckpointCommand returns the `checkpoint` subcommand (only in experimental)
-func NewCheckpointCommand(dockerCli *command.DockerCli) *cobra.Command {
-	return &cobra.Command{}
+// NewCheckpointCommand appends the `checkpoint` subcommands to rootCmd (only in experimental)
+func NewCheckpointCommand(rootCmd *cobra.Command, dockerCli *command.DockerCli) {
 }

@@ -11,10 +11,10 @@ import (
 )
 
 // NewPluginCommand returns a cobra command for `plugin` subcommands
-func NewPluginCommand(dockerCli *command.DockerCli) *cobra.Command {
+func NewPluginCommand(rootCmd *cobra.Command, dockerCli *command.DockerCli) {
 	cmd := &cobra.Command{
 		Use:   "plugin",
-		Short: "Manage plugins",
+		Short: "Manage Docker plugins",
 		Args:  cli.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Fprintf(dockerCli.Err(), "\n"+cmd.UsageString())
@@ -31,5 +31,6 @@ func NewPluginCommand(dockerCli *command.DockerCli) *cobra.Command {
 		newSetCommand(dockerCli),
 		newPushCommand(dockerCli),
 	)
-	return cmd
+
+	rootCmd.AddCommand(cmd)
 }
