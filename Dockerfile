@@ -7,7 +7,7 @@ COPY ./ /go/src/github.com/appcelerator/docker-haproxy
 RUN echo "@edge http://nl.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories && \
     echo "@testing http://nl.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories && \
     echo "@community http://nl.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
-RUN apk update && \
+RUN apk update && apk upgrade && \
     apk -v --virtual build-deps add git make bash go@community musl-dev && \
     apk -v add curl go@community && \
     go version && \
