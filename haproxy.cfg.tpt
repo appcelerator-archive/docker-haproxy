@@ -12,8 +12,8 @@ resolvers docker
 
 defaults
     mode http
-    log global
-    option httplog
+    option dontlog-normal
+    option dontlognull
     timeout connect 5000ms
     timeout client 50000ms
     timeout server 50000ms
