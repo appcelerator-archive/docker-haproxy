@@ -86,12 +86,15 @@ func (inst *ETCDClient) getAllPublicServices(stackID string) (map[string]*public
 	if err != nil {
 		return nil, err
 	}
+	serviceMap := make(map[string]*publicService)
+	if len(resp.Kvs) == 0 {
+		return serviceMap, nil
+	}
 	servList := stack.IdList{}
 	erru := proto.Unmarshal(resp.Kvs[0].Value, &servList)
 	if erru != nil {
 		return nil, erru
 	}
-	serviceMap := make(map[string]*publicService)
 	for _, servID := range servList.List {
 		servSpec := service.ServiceSpec{}
 		fmt.Printf("process service Id:%s\n", servID)
