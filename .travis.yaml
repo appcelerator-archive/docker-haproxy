@@ -1,0 +1,24 @@
+sudo: required
+
+services:
+  - docker
+
+language: go
+
+go:
+  - 1.7.1
+
+install:
+  - go get -u github.com/golang/lint/golint
+  - go get -u github.com/Masterminds/glide
+  - make install-deps
+
+script:
+  - docker build -t appcelerator/haproxy:latest .
+  - docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
+  - docker push appcelerator/haproxy:latest
+
+after_success:
+
+
+
