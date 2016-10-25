@@ -4,8 +4,15 @@ import (
 	"github.com/appcelerator/docker-haproxy/core"
 )
 
-const version string = "1.0.1"
+// build vars
+var (
+	// Version is set with a linker flag (see Makefile)
+	Version string
+
+	// Build is set with a linker flag (see Makefile)
+	Build string
+)
 
 func main() {
-	core.Run(version)
+	core.Run(Version, Build)
 }

@@ -1,0 +1,26 @@
+sudo: required
+
+services:
+  - docker
+
+language: go
+
+go:
+  - 1.7.1
+
+install:
+  - go get -u github.com/golang/lint/golint
+  - go get -u github.com/Masterminds/glide
+  - make install-deps
+  - rm -rf vendor/github.com/appcelerator/amp/vendor
+
+script:
+  - docker run -t --volume=$GOPATH/src/github.com/appcelerator/docker-haproxy:/go/src/github.com/appcelerator/docker-haproxy appcelerator/docker-alpine-builder docker-haproxy
+  - docker build -f Dockerfile.travis -t appcelerator/haproxy:1.0.1 .
+  - docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
+  - docker push appcelerator/haproxy:1.0.1
+
+after_success:
+
+
+

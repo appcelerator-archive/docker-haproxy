@@ -9,9 +9,9 @@ import (
 var ampHAProxyControllerVersion string
 
 //Run launch main loop
-func Run(version string) {
+func Run(version string, build string) {
 	ampHAProxyControllerVersion = version
-	conf.load(version)
+	conf.load(version, build)
 	err := etcdClient.init()
 	if err != nil {
 		fmt.Printf("ETCD connection error %v\n", err)

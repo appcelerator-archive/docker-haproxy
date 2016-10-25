@@ -25,6 +25,6 @@ RUN apk update && apk upgrade && \
 
 COPY haproxy.cfg.tpt /usr/local/etc/haproxy/haproxy.cfg.tpt
 
-HEALTHCHECK --interval=5s --timeout=10s --retries=12 CMD curl http://localhost/healthcheck
+HEALTHCHECK --interval=5s --timeout=10s --retries=12 CMD curl http://127.0.0.1/healthcheck
 
 CMD ["/go/bin/docker-haproxy"]

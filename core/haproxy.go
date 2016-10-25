@@ -3,23 +3,23 @@ package core
 import (
 	"bufio"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
-	"strings"
-	"net"
 )
 
 //HAProxy haproxy struct
 type HAProxy struct {
-	exec                  *exec.Cmd
-	isLoadingConf 	      bool
-	dnsRetryLoopId	      int
-	loadTry       	      int
-	dnsNotResolvedList    []string
-	defaultInfraService   []defaultInfraService
+	exec                *exec.Cmd
+	isLoadingConf       bool
+	dnsRetryLoopId      int
+	loadTry             int
+	dnsNotResolvedList  []string
+	defaultInfraService []defaultInfraService
 }
 
 type publicService struct {
@@ -47,12 +47,12 @@ func (app *HAProxy) init() {
 	app.loadTry = 0
 	app.dnsNotResolvedList = []string{}
 
-	app.defaultInfraService =  []defaultInfraService{
-		defaultInfraService{ name: "amplifier", port: 50101, mode: "tcp" },
-		defaultInfraService{ name: "grafana", port: 3000 },
-		defaultInfraService{ name: "elasticsearch", port: 9200},
-		defaultInfraService{ name: "amp-ui", port: 8080 },
-		defaultInfraService{ name: "registry", port: 5000 },
+	app.defaultInfraService = []defaultInfraService{
+		{name: "amplifier", port: 50101, mode: "tcp"},
+		{name: "grafana", port: 3000},
+		{name: "elasticsearch", port: 9200},
+		{name: "amp-ui", port: 8080},
+		{name: "registry", port: 5000},
 	}
 	haproxy.updateConfiguration(false)
 }
@@ -123,7 +123,7 @@ func (app *HAProxy) reloadConfiguration() {
 // update configuration managing the isUpdatingConf flag
 func (app *HAProxy) updateConfiguration(reload bool) error {
 	app.dnsRetryLoopId++
-	app.dnsNotResolvedList= []string{}
+	app.dnsNotResolvedList = []string{}
 	err := app.updateConfigurationEff(reload)
 	if err == nil {
 		app.startDNSRevolverLoop(app.dnsRetryLoopId)
@@ -226,7 +226,7 @@ func hasToBeSkipped(line string, skip bool) bool {
 	ref := strings.Trim(line, " ")
 	if conf.noDefaultBackend {
 		if strings.HasPrefix(ref, "frontend main_") || strings.HasPrefix(ref, "backend main_") || strings.HasPrefix(ref, "backend stack_") {
-			//if nodefaultbackend activated and default frontend or backend then skip			
+			//if nodefaultbackend activated and default frontend or backend then skip
 			return true
 		}
 	} else {
@@ -242,7 +242,7 @@ func hasToBeSkipped(line string, skip bool) bool {
 			}
 		}
 	}
-	//if line not "" and not skip then continue to not skip 
+	//if line not "" and not skip then continue to not skip
 	return false
 }
 
@@ -286,7 +286,7 @@ func (app *HAProxy) writeServiceBackend(file *os.File, serviceMap map[string]*pu
 			} else {
 				line2 := "    #dns name not resolved\n"
 				file.WriteString(line2)
-				fmt.Printf(line2)				
+				fmt.Printf(line2)
 				line3 := fmt.Sprintf("    #server %s_1 %s:%s check resolvers docker resolve-prefer ipv4\n", service.name, service.name, intPort)
 				file.WriteString(line3)
 				fmt.Printf(line3)
@@ -306,7 +306,7 @@ func (app *HAProxy) writeInfraServiceBackend(file *os.File, service defaultInfra
 	//to be removed when haproxy will fixe this bug
 	if app.tryToResolvDNS(service.name) {
 		if service.mode != "" {
-			file.WriteString("    mode "+service.mode+"\n")	
+			file.WriteString("    mode " + service.mode + "\n")
 		}
 		line2 := fmt.Sprintf("    server %s_1 %s:%d check resolvers docker resolve-prefer ipv4\n", service.name, service.name, service.port)
 		file.WriteString(line2)
@@ -314,7 +314,7 @@ func (app *HAProxy) writeInfraServiceBackend(file *os.File, service defaultInfra
 	} else {
 		line2 := "    #dns name not resolved\n"
 		file.WriteString(line2)
-		fmt.Printf(line2)				
+		fmt.Printf(line2)
 		line3 := fmt.Sprintf("    #server %s_1 %s:%d check resolvers docker resolve-prefer ipv4\n", service.name, service.name, service.port)
 		file.WriteString(line3)
 		fmt.Printf(line3)
@@ -341,8 +341,8 @@ func (app *HAProxy) writeStackBackend(file *os.File, stackMap map[string]*public
 			fmt.Println(line2)
 			line3 := fmt.Sprintf("    #server %s_1 %s-haproxy:80 check resolvers docker resolve-prefer ipv4\n", stack.name, stack.name)
 			file.WriteString(line3)
-			fmt.Printf(line3)	
-			app.addDNSNameInRetryList(fmt.Sprintf("%s-haproxy", stack.name))		
+			fmt.Printf(line3)
+			app.addDNSNameInRetryList(fmt.Sprintf("%s-haproxy", stack.name))
 		}
 	}
 	return nil
@@ -351,10 +351,10 @@ func (app *HAProxy) writeStackBackend(file *os.File, stackMap map[string]*public
 // test if a dns name is resolved or not
 func (app *HAProxy) tryToResolvDNS(name string) bool {
 	_, err := net.LookupIP(name)
-  	if err != nil {
-    		return false
-    	}
-    	return true
+	if err != nil {
+		return false
+	}
+	return true
 }
 
 // add unresolved dns name in list to be retested later
@@ -373,12 +373,12 @@ func (app *HAProxy) startDNSRevolverLoop(loopId int) {
 	fmt.Printf("Start DNS resolver id: %d\n", loopId)
 	go func() {
 		for {
-			for _, name := range(haproxy.dnsNotResolvedList) {
+			for _, name := range haproxy.dnsNotResolvedList {
 				if app.tryToResolvDNS(name) {
 					if haproxy.dnsRetryLoopId == loopId {
 						fmt.Printf("DNS %s resolved, update configuration\n", name)
 						app.updateConfiguration(true)
-					} 
+					}
 					fmt.Printf("Stop DNS resolver id: %d\n", loopId)
 					return
 				}
@@ -386,7 +386,7 @@ func (app *HAProxy) startDNSRevolverLoop(loopId int) {
 			time.Sleep(10)
 			if haproxy.dnsRetryLoopId != loopId {
 				fmt.Printf("Stop DNS resolver id: %d\n", loopId)
-				return 
+				return
 			}
 		}
 	}()
