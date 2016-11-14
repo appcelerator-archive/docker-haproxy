@@ -45,6 +45,7 @@ frontend main_http-in
     use_backend infra_elasticsearch if { hdr_beg(host) -i elasticsearch. }
     use_backend infra_grafana if { hdr_beg(host) -i grafana. }
     use_backend infra_registry if { hdr_beg(host) -i registry. }
+    use_backend infra_amplifier-gateway if { hdr_beg(host) -i amplifier-api. }
 [frontend]
     default_backend controler_api    
 
