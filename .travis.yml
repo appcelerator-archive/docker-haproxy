@@ -17,8 +17,11 @@ install:
 script:
   - docker run -t --volume=$GOPATH/src/github.com/appcelerator/docker-haproxy:/go/src/github.com/appcelerator/docker-haproxy appcelerator/docker-alpine-builder docker-haproxy
   - docker build -f Dockerfile.travis -t appcelerator/haproxy:latest .
-  - docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
-  - docker push appcelerator/haproxy:latest
 
 after_success:
+  - if [ "$TRAVIS_BRANCH" == "master" ] && [ "$TRAVIS_PULL_REQUEST" == "false" ]; then
+      docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD" &&
+      docker tag appcelerator/amp:local appcelerator/amp:latest &&
+      timeout 30 docker push appcelerator/amp:latest;
+    fi
 
