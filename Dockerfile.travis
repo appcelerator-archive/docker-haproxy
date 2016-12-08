@@ -1,0 +1,10 @@
+FROM haproxy:1.6-alpine
+
+RUN apk update && apk add -v curl
+COPY ./docker-haproxy.alpine /bin/docker-haproxy
+COPY haproxy.cfg.tpt /usr/local/etc/haproxy/haproxy.cfg.tpt
+
+HEALTHCHECK --interval=5s --timeout=10s --retries=12 CMD curl http://127.0.0.1/healthcheck
+
+CMD ["/bin/docker-haproxy"]
+

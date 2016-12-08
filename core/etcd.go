@@ -89,7 +89,7 @@ func (inst *ETCDClient) getAllPublicServices(stackID string) (map[string]*public
 	serviceMap := make(map[string]*publicService)
 	if len(resp.Kvs) == 0 {
 		return serviceMap, nil
-	}	
+	}
 	servList := stack.IdList{}
 	erru := proto.Unmarshal(resp.Kvs[0].Value, &servList)
 	if erru != nil {

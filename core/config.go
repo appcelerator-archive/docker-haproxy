@@ -9,23 +9,23 @@ import (
 
 //ControllerConfig Json format of conffile
 type ControllerConfig struct {
-	etcdEndpoints   	[]string
-	haProxyPort     	int
-	haProxyConffile 	string
-	rootServicesKey 	string
-	stackName       	string
-	stackID         	string
-	noDefaultBackend	bool
-	debug			bool
+	etcdEndpoints    []string
+	haProxyPort      int
+	haProxyConffile  string
+	rootServicesKey  string
+	stackName        string
+	stackID          string
+	noDefaultBackend bool
+	debug            bool
 }
 
 var conf ControllerConfig
 
 //Load Json conffile and instanciate new Config
-func (config *ControllerConfig) load(version string) {
+func (config *ControllerConfig) load(version string, build string) {
 	config.setDefault()
 	config.loadConfigUsingEnvVariable()
-	config.display(version)
+	config.display(version, build)
 }
 
 //Set default value of configuration
@@ -48,8 +48,8 @@ func (config *ControllerConfig) loadConfigUsingEnvVariable() {
 	config.debug = getBoolParameter("DEBUG", config.debug)
 }
 
-func (config *ControllerConfig) display(version string) {
-	fmt.Printf("HAProxy controller version %s\n", version)
+func (config *ControllerConfig) display(version string, build string) {
+	fmt.Printf("HAProxy controller version %s  (build:%s)\n", version, build)
 	fmt.Printf("ETCD endpoints %s\n", config.etcdEndpoints)
 	if config.stackName == "" {
 		fmt.Println("Role: Master")
@@ -73,7 +73,7 @@ func getBoolParameter(envVariableName string, def bool) bool {
 	if value == "" {
 		return def
 	}
-	if (strings.ToLower(value) == "true") {
+	if strings.ToLower(value) == "true" {
 		return true
 	}
 	return false

@@ -48,12 +48,11 @@ func (app *HAProxy) init() {
 	app.dnsNotResolvedList = []string{}
 
 	app.defaultInfraService = []defaultInfraService{
-		defaultInfraService{name: "amplifier", port: 50101, mode: "tcp"},
-		defaultInfraService{name: "grafana", port: 3000},
-		defaultInfraService{name: "elasticsearch", port: 9200},
-		defaultInfraService{name: "amp-ui", port: 8080},
-		defaultInfraService{name: "registry", port: 5000},
-		defaultInfraService{name: "amplifier-gateway", port: 3000},
+		{name: "amplifier", port: 50101, mode: "tcp"},
+		{name: "grafana", port: 3000},
+		{name: "elasticsearch", port: 9200},
+		{name: "amp-ui", port: 8080},
+		{name: "registry", port: 5000},
 	}
 	haproxy.updateConfiguration(false)
 }
