@@ -5,7 +5,7 @@ SHELL := /bin/bash
 BASEDIR := $(shell echo $${PWD})
 
 # build variables (provided to binaries by linker LDFLAGS below)
-VERSION := 1.1.0-10
+VERSION := 1.0.3
 BUILD := $(shell git rev-parse HEAD | cut -c1-8)
 
 LDFLAGS=-ldflags "-X=main.Version=$(VERSION) -X=main.Build=$(BUILD)"
@@ -29,7 +29,7 @@ NAME := docker-haproxy
 OWNER := appcelerator
 REPO := github.com/$(OWNER)/$(NAME)
 
-TAG := 1.0.1
+TAG := latest
 IMAGE := $(OWNER)/amp:$(TAG)
 
 all: version check install

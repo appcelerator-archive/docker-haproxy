@@ -5,8 +5,7 @@ It's a HAProxy image containing a controller which is able to update HAProxy con
 
 # tags
 
-- latest
-- 1.0.1 version used with amp 0.1.1
+- 1.0.3
 
 # Setting
 
