@@ -9,7 +9,7 @@ services:
       - haproxy
 
   etcd:
-    image: appcelerator/etcd:3.0.10
+    image: appcelerator/etcd:3.1.0-rc.1
     command: ["--listen-client-urls", "http://0.0.0.0:2379", "--advertise-client-urls", "http://etcd:2379"]
 
   haproxy:
