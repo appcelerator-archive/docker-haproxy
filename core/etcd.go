@@ -131,11 +131,11 @@ func (inst *ETCDClient) getAllStacks() (map[string]*publicStack, error) {
 	}
 	stackMap := make(map[string]*publicStack)
 	for _, st := range resp.Kvs {
-		stack := stack.Stack{}
 		fmt.Printf("key:%s\n", string(st.Key))
 		list := strings.Split(string(st.Key), "/")
-		stackMap[stack.Name] = &publicStack{
-			name: list[len(list)-1],
+		stackName := list[len(list)-1]
+		stackMap[stackName] = &publicStack{
+			name: stackName,
 		}
 	}
 	return stackMap, nil
