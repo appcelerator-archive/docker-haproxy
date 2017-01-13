@@ -51,7 +51,6 @@ func (app *HAProxy) init() {
 		{name: "amplifier", port: 50101, mode: "tcp"},
 		{name: "grafana", port: 3000},
 		{name: "elasticsearch", port: 9200},
-		{name: "amp-ui", port: 8080},
 		{name: "registry", port: 5000},
 		{name: "amplifier-gateway", port: 3000},
 	}

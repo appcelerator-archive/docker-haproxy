@@ -41,7 +41,6 @@ frontend main_http-in
     rspadd Access-Control-Allow-Methods:\ GET,\ POST,\ PUT,\ DELETE,\ OPTIONS if { capture.req.hdr(0) -m found }
     rspadd Access-Control-Max-Age:\ 1728000 if { capture.req.hdr(0) -m found }
     #infra
-    use_backend infra_amp-ui if { hdr_beg(host) -i ui. }
     use_backend infra_elasticsearch if { hdr_beg(host) -i elasticsearch. }
     use_backend infra_grafana if { hdr_beg(host) -i grafana. }
     use_backend infra_registry if { hdr_beg(host) -i registry. }
