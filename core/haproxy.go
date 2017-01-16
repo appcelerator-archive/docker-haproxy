@@ -379,10 +379,9 @@ func (app *HAProxy) startDNSRevolverLoop(loopId int) {
 					if haproxy.dnsRetryLoopId == loopId {
 						fmt.Printf("DNS %s resolved, update configuration\n", name)
 						app.updateConfiguration(true)
-						time.Sleep(10 * time.Second)
 					}
 					fmt.Printf("Stop DNS resolver id: %d\n", loopId)
-					//return
+					return
 				}
 			}
 			time.Sleep(10)
