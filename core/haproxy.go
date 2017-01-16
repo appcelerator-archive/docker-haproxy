@@ -53,6 +53,7 @@ func (app *HAProxy) init() {
 		{name: "elasticsearch", port: 9200},
 		{name: "registry", port: 5000},
 		{name: "amplifier-gateway", port: 3000},
+		{name: "amp-function-listener", port: 80},
 	}
 	haproxy.updateConfiguration(false)
 }

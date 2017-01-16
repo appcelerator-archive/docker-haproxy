@@ -45,6 +45,7 @@ frontend main_http-in
     use_backend infra_grafana if { hdr_beg(host) -i grafana. }
     use_backend infra_registry if { hdr_beg(host) -i registry. }
     use_backend infra_amplifier-gateway if { hdr_beg(host) -i amplifier-api. }
+    use_backend infra_amp-function-listener if { hdr_beg(host) -i fn. }
 [frontend]
     default_backend controler_api    
 
