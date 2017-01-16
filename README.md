@@ -5,7 +5,7 @@ It's a HAProxy image containing a controller which is able to update HAProxy con
 
 # tags
 
-- 1.0.3
+- 1.0.4
 
 # Setting
 
