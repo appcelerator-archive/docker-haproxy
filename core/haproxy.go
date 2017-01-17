@@ -281,14 +281,14 @@ func (app *HAProxy) writeServiceBackend(file *os.File, serviceMap map[string]*pu
 			//if dns name is not resolved haproxy (v1.6) won't start or accept the new configuration so server is disabled
 			//to be removed when haproxy will fixe this bug
 			if dnsResolved {
-				line2 := fmt.Sprintf("    server %s_1 %s:%s check resolvers docker resolve-prefer ipv4\n", service.name, service.name, intPort)
+				line2 := fmt.Sprintf("    server %s_1 %s:%s resolvers docker resolve-prefer ipv4\n", service.name, service.name, intPort)
 				file.WriteString(line2)
 				fmt.Printf(line2)
 			} else {
 				line2 := "    #dns name not resolved\n"
 				file.WriteString(line2)
 				fmt.Printf(line2)
-				line3 := fmt.Sprintf("    #server %s_1 %s:%s check resolvers docker resolve-prefer ipv4\n", service.name, service.name, intPort)
+				line3 := fmt.Sprintf("    #server %s_1 %s:%s resolvers docker resolve-prefer ipv4\n", service.name, service.name, intPort)
 				file.WriteString(line3)
 				fmt.Printf(line3)
 				app.addDNSNameInRetryList(service.name)
@@ -309,14 +309,14 @@ func (app *HAProxy) writeInfraServiceBackend(file *os.File, service defaultInfra
 		if service.mode != "" {
 			file.WriteString("    mode " + service.mode + "\n")
 		}
-		line2 := fmt.Sprintf("    server %s_1 %s:%d check resolvers docker resolve-prefer ipv4\n", service.name, service.name, service.port)
+		line2 := fmt.Sprintf("    server %s_1 %s:%d resolvers docker resolve-prefer ipv4\n", service.name, service.name, service.port)
 		file.WriteString(line2)
 		fmt.Printf(line2)
 	} else {
 		line2 := "    #dns name not resolved\n"
 		file.WriteString(line2)
 		fmt.Printf(line2)
-		line3 := fmt.Sprintf("    #server %s_1 %s:%d check resolvers docker resolve-prefer ipv4\n", service.name, service.name, service.port)
+		line3 := fmt.Sprintf("    #server %s_1 %s:%d resolvers docker resolve-prefer ipv4\n", service.name, service.name, service.port)
 		file.WriteString(line3)
 		fmt.Printf(line3)
 		app.addDNSNameInRetryList(service.name)
@@ -333,14 +333,14 @@ func (app *HAProxy) writeStackBackend(file *os.File, stackMap map[string]*public
 		//if dns name is not resolved haproxy (v1.6) won't start or accept the new configuration so server is disabled
 		//to be removed when haproxy will fixe this bug
 		if app.tryToResolvDNS(fmt.Sprintf("%s-haproxy", stack.name)) {
-			line2 := fmt.Sprintf("    server %s_1 %s-haproxy:80 check resolvers docker resolve-prefer ipv4\n", stack.name, stack.name)
+			line2 := fmt.Sprintf("    server %s_1 %s-haproxy:80 resolvers docker resolve-prefer ipv4\n", stack.name, stack.name)
 			file.WriteString(line2)
 			fmt.Printf(line2)
 		} else {
 			line2 := "    #dns name not resolved\n"
 			file.WriteString(line2)
 			fmt.Println(line2)
-			line3 := fmt.Sprintf("    #server %s_1 %s-haproxy:80 check resolvers docker resolve-prefer ipv4\n", stack.name, stack.name)
+			line3 := fmt.Sprintf("    #server %s_1 %s-haproxy:80 resolvers docker resolve-prefer ipv4\n", stack.name, stack.name)
 			file.WriteString(line3)
 			fmt.Printf(line3)
 			app.addDNSNameInRetryList(fmt.Sprintf("%s-haproxy", stack.name))

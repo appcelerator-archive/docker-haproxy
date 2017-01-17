@@ -6,8 +6,8 @@ global
 resolvers docker
     nameserver dnsmasq 127.0.0.1:53
     resolve_retries      6
-    timeout retry        10s
-    hold valid           60s    
+    timeout retry        3s
+    hold valid           10s    
 
 
 defaults
@@ -33,13 +33,14 @@ frontend main_http-in
     bind *:80
     #monitoring
     monitor-uri /healthcheck
-    #ACAO
-    capture request header origin len 128
-    http-response add-header Access-Control-Allow-Origin %[capture.req.hdr(0)] if { capture.req.hdr(0) -m found }
-    rspadd Access-Control-Allow-Credentials:\ true if { capture.req.hdr(0) -m found }
-    rspadd Access-Control-Allow-Headers:\ Origin,\ X-Requested-With,\ Content-Type,\ Origin,\ User-Agent,\ If-Modified-Since,\ Cache-Control,\ Accept if { capture.req.hdr(0) -m found }
-    rspadd Access-Control-Allow-Methods:\ GET,\ POST,\ PUT,\ DELETE,\ OPTIONS if { capture.req.hdr(0) -m found }
-    rspadd Access-Control-Max-Age:\ 1728000 if { capture.req.hdr(0) -m found }
+    #ACAO---
+    #capture request header origin len 128
+    #http-response add-header Access-Control-Allow-Origin %[capture.req.hdr(0)] if { capture.req.hdr(0) -m found }
+    #rspadd Access-Control-Allow-Credentials:\ true if { capture.req.hdr(0) -m found }
+    #rspadd Access-Control-Allow-Headers:\ Origin,\ X-Requested-With,\ Content-Type,\ Origin,\ User-Agent,\ If-Modified-Since,\ Cache-Control,\ Accept if { capture.req.hdr(0) -m found }
+    #rspadd Access-Control-Allow-Methods:\ GET,\ POST,\ PUT,\ DELETE,\ OPTIONS if { capture.req.hdr(0) -m found }
+    #rspadd Access-Control-Max-Age:\ 1728000 if { capture.req.hdr(0) -m found }
+    #ACAO end---
     #infra
     use_backend infra_elasticsearch if { hdr_beg(host) -i elasticsearch. }
     use_backend infra_grafana if { hdr_beg(host) -i grafana. }
