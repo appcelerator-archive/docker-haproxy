@@ -15,10 +15,10 @@ import (
 
 func TestCheckpointListError(t *testing.T) {
 	client := &Client{
-		transport: newMockClient(nil, errorMock(http.StatusInternalServerError, "Server error")),
+		client: newMockClient(errorMock(http.StatusInternalServerError, "Server error")),
 	}
 
-	_, err := client.CheckpointList(context.Background(), "container_id")
+	_, err := client.CheckpointList(context.Background(), "container_id", types.CheckpointListOptions{})
 	if err == nil || err.Error() != "Error response from daemon: Server error" {
 		t.Fatalf("expected a Server Error, got %v", err)
 	}
@@ -28,7 +28,7 @@ func TestCheckpointList(t *testing.T) {
 	expectedURL := "/containers/container_id/checkpoints"
 
 	client := &Client{
-		transport: newMockClient(nil, func(req *http.Request) (*http.Response, error) {
+		client: newMockClient(func(req *http.Request) (*http.Response, error) {
 			if !strings.HasPrefix(req.URL.Path, expectedURL) {
 				return nil, fmt.Errorf("Expected URL '%s', got '%s'", expectedURL, req.URL)
 			}
@@ -47,7 +47,7 @@ func TestCheckpointList(t *testing.T) {
 		}),
 	}
 
-	checkpoints, err := client.CheckpointList(context.Background(), "container_id")
+	checkpoints, err := client.CheckpointList(context.Background(), "container_id", types.CheckpointListOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -68,6 +68,7 @@ const (
 	mediaTypeReactionsPreview = "application/vnd.github.squirrel-girl-preview"
 
 	// https://developer.github.com/changes/2016-04-01-squash-api-preview/
+	// https://developer.github.com/changes/2016-09-26-pull-request-merge-api-update/
 	mediaTypeSquashPreview = "application/vnd.github.polaris-preview+json"
 
 	// https://developer.github.com/changes/2016-04-04-git-signing-api-preview/
@@ -79,9 +80,6 @@ const (
 	// https://developer.github.com/changes/2016-06-14-repository-invitations/
 	mediaTypeRepositoryInvitationsPreview = "application/vnd.github.swamp-thing-preview+json"
 
-	// https://developer.github.com/changes/2016-04-21-oauth-authorizations-grants-api-preview/
-	mediaTypeOAuthGrantAuthorizationsPreview = "application/vnd.github.damage-preview+json"
-
 	// https://developer.github.com/changes/2016-07-06-github-pages-preiew-api/
 	mediaTypePagesPreview = "application/vnd.github.mister-fantastic-preview+json"
 
@@ -90,6 +88,9 @@ const (
 
 	// https://developer.github.com/changes/2016-09-14-projects-api/
 	mediaTypeProjectsPreview = "application/vnd.github.inertia-preview+json"
+
+	// https://developer.github.com/changes/2016-09-14-Integrations-Early-Access/
+	mediaTypeIntegrationPreview = "application/vnd.github.machine-man-preview+json"
 )
 
 // A Client manages communication with the GitHub API.
@@ -116,12 +117,15 @@ type Client struct {
 
 	// Services used for talking to different parts of the GitHub API.
 	Activity       *ActivityService
+	Admin          *AdminService
 	Authorizations *AuthorizationsService
 	Gists          *GistsService
 	Git            *GitService
 	Gitignores     *GitignoresService
+	Integrations   *IntegrationsService
 	Issues         *IssuesService
 	Organizations  *OrganizationsService
+	Projects       *ProjectsService
 	PullRequests   *PullRequestsService
 	Repositories   *RepositoriesService
 	Search         *SearchService
@@ -186,14 +190,17 @@ func NewClient(httpClient *http.Client) *Client {
 	c := &Client{client: httpClient, BaseURL: baseURL, UserAgent: userAgent, UploadURL: uploadURL}
 	c.common.client = c
 	c.Activity = (*ActivityService)(&c.common)
+	c.Admin = (*AdminService)(&c.common)
 	c.Authorizations = (*AuthorizationsService)(&c.common)
 	c.Gists = (*GistsService)(&c.common)
 	c.Git = (*GitService)(&c.common)
 	c.Gitignores = (*GitignoresService)(&c.common)
+	c.Integrations = (*IntegrationsService)(&c.common)
 	c.Issues = (*IssuesService)(&c.common)
 	c.Licenses = (*LicensesService)(&c.common)
 	c.Migrations = (*MigrationService)(&c.common)
 	c.Organizations = (*OrganizationsService)(&c.common)
+	c.Projects = (*ProjectsService)(&c.common)
 	c.PullRequests = (*PullRequestsService)(&c.common)
 	c.Reactions = (*ReactionsService)(&c.common)
 	c.Repositories = (*RepositoriesService)(&c.common)
@@ -494,6 +501,24 @@ func (r *RateLimitError) Error() string {
 		r.Response.StatusCode, r.Message, r.Rate.Reset.Time.Sub(time.Now()))
 }
 
+// AbuseRateLimitError occurs when GitHub returns 403 Forbidden response with the
+// "documentation_url" field value equal to "https://developer.github.com/v3#abuse-rate-limits".
+type AbuseRateLimitError struct {
+	Response *http.Response // HTTP response that caused this error
+	Message  string         `json:"message"` // error message
+
+	// RetryAfter is provided with some abuse rate limit errors. If present,
+	// it is the amount of time that the client should wait before retrying.
+	// Otherwise, the client should try again later (after an unspecified amount of time).
+	RetryAfter *time.Duration
+}
+
+func (r *AbuseRateLimitError) Error() string {
+	return fmt.Sprintf("%v %v: %d %v",
+		r.Response.Request.Method, sanitizeURL(r.Response.Request.URL),
+		r.Response.StatusCode, r.Message)
+}
+
 // sanitizeURL redacts the client_secret parameter from the URL which may be
 // exposed to the user, specifically in the ErrorResponse error message.
 func sanitizeURL(uri *url.URL) *url.URL {
@@ -564,6 +589,20 @@ func CheckResponse(r *http.Response) error {
 			Response: errorResponse.Response,
 			Message:  errorResponse.Message,
 		}
+	case r.StatusCode == http.StatusForbidden && errorResponse.DocumentationURL == "https://developer.github.com/v3#abuse-rate-limits":
+		abuseRateLimitError := &AbuseRateLimitError{
+			Response: errorResponse.Response,
+			Message:  errorResponse.Message,
+		}
+		if v := r.Header["Retry-After"]; len(v) > 0 {
+			// According to GitHub support, the "Retry-After" header value will be
+			// an integer which represents the number of seconds that one should
+			// wait before resuming making requests.
+			retryAfterSeconds, _ := strconv.ParseInt(v[0], 10, 64) // Error handling is noop.
+			retryAfter := time.Duration(retryAfterSeconds) * time.Second
+			abuseRateLimitError.RetryAfter = &retryAfter
+		}
+		return abuseRateLimitError
 	default:
 		return errorResponse
 	}

@@ -13,10 +13,14 @@ import (
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Login via github",
-	Long:  `Create a github access token and store it in your Config file to authenticate further commands`,
-	Run: func(cmd *cobra.Command, args []string) {
-		Login(AMP)
+	Short: "Login via GitHub",
+	Long:  `Create a GitHub access token and store it in your Config file to authenticate further commands.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		err := AMP.Connect()
+		if err != nil {
+			return err
+		}
+		return Login(AMP)
 	},
 }
 
@@ -25,7 +29,7 @@ func init() {
 }
 
 // Login creates a github access token and store it in your Config file to authenticate further commands
-func Login(a *client.AMP) {
+func Login(a *client.AMP) error {
 	username, password, lastEight, name, err := basicLogin(a)
 	if err != nil {
 		otpError := regexp.MustCompile("Must specify two-factor authentication OTP code")
@@ -37,10 +41,11 @@ func Login(a *client.AMP) {
 		}
 	}
 
-	a.Configuration.Github = lastEight
+	a.Configuration.GitHub = lastEight
 	cli.SaveConfiguration(a.Configuration)
 
 	welcomeUser(name)
+	return nil
 }
 
 // GetUsername prompts for username and returns the result

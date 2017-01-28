@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cast"
+
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 )
@@ -131,12 +133,18 @@ func initConfigs() {
 	unmarshalReader(remote, v.kvstore)
 }
 
-func initYAML() {
+func initConfig(typ, config string) {
 	Reset()
-	SetConfigType("yaml")
-	r := bytes.NewReader(yamlExample)
+	SetConfigType(typ)
+	r := strings.NewReader(config)
 
-	unmarshalReader(r, v.config)
+	if err := unmarshalReader(r, v.config); err != nil {
+		panic(err)
+	}
+}
+
+func initYAML() {
+	initConfig("yaml", string(yamlExample))
 }
 
 func initJSON() {
@@ -235,7 +243,9 @@ func (s *stringValue) String() string {
 
 func TestBasics(t *testing.T) {
 	SetConfigFile("/tmp/config.yaml")
-	assert.Equal(t, "/tmp/config.yaml", v.getConfigFile())
+	filename, err := v.getConfigFile()
+	assert.Equal(t, "/tmp/config.yaml", filename)
+	assert.NoError(t, err)
 }
 
 func TestDefault(t *testing.T) {
@@ -261,7 +271,7 @@ func TestUnmarshalling(t *testing.T) {
 	assert.False(t, InConfig("state"))
 	assert.Equal(t, "steve", Get("name"))
 	assert.Equal(t, []interface{}{"skateboarding", "snowboarding", "go"}, Get("hobbies"))
-	assert.Equal(t, map[string]interface{}{"jacket": "leather", "trousers": "denim", "pants": map[interface{}]interface{}{"size": "large"}}, Get("clothing"))
+	assert.Equal(t, map[string]interface{}{"jacket": "leather", "trousers": "denim", "pants": map[string]interface{}{"size": "large"}}, Get("clothing"))
 	assert.Equal(t, 35, Get("age"))
 }
 
@@ -435,13 +445,25 @@ func TestAllKeys(t *testing.T) {
 	assert.Equal(t, all, AllSettings())
 }
 
-func TestCaseInSensitive(t *testing.T) {
-	assert.Equal(t, true, Get("hacker"))
-	Set("Title", "Checking Case")
-	assert.Equal(t, "Checking Case", Get("tItle"))
+func TestAllKeysWithEnv(t *testing.T) {
+	v := New()
+
+	// bind and define environment variables (including a nested one)
+	v.BindEnv("id")
+	v.BindEnv("foo.bar")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	os.Setenv("ID", "13")
+	os.Setenv("FOO_BAR", "baz")
+
+	expectedKeys := sort.StringSlice{"id", "foo.bar"}
+	expectedKeys.Sort()
+	keys := sort.StringSlice(v.AllKeys())
+	keys.Sort()
+	assert.Equal(t, expectedKeys, keys)
 }
 
 func TestAliasesOfAliases(t *testing.T) {
+	Set("Title", "Checking Case")
 	RegisterAlias("Foo", "Bar")
 	RegisterAlias("Bar", "Title")
 	assert.Equal(t, "Checking Case", Get("FOO"))
@@ -538,7 +560,6 @@ func TestBindPFlag(t *testing.T) {
 }
 
 func TestBoundCaseSensitivity(t *testing.T) {
-
 	assert.Equal(t, "brown", Get("eyes"))
 
 	BindEnv("eYEs", "TURTLE_EYES")
@@ -635,10 +656,10 @@ func TestFindsNestedKeys(t *testing.T) {
 		"age":  35,
 		"owner": map[string]interface{}{
 			"organization": "MongoDB",
-			"Bio":          "MongoDB Chief Developer Advocate & Hacker at Large",
+			"bio":          "MongoDB Chief Developer Advocate & Hacker at Large",
 			"dob":          dob,
 		},
-		"owner.Bio": "MongoDB Chief Developer Advocate & Hacker at Large",
+		"owner.bio": "MongoDB Chief Developer Advocate & Hacker at Large",
 		"type":      "donut",
 		"id":        "0001",
 		"name":      "Cake",
@@ -647,7 +668,7 @@ func TestFindsNestedKeys(t *testing.T) {
 		"clothing": map[string]interface{}{
 			"jacket":   "leather",
 			"trousers": "denim",
-			"pants": map[interface{}]interface{}{
+			"pants": map[string]interface{}{
 				"size": "large",
 			},
 		},
@@ -693,7 +714,7 @@ func TestReadBufConfig(t *testing.T) {
 	assert.False(t, v.InConfig("state"))
 	assert.Equal(t, "steve", v.Get("name"))
 	assert.Equal(t, []interface{}{"skateboarding", "snowboarding", "go"}, v.Get("hobbies"))
-	assert.Equal(t, map[string]interface{}{"jacket": "leather", "trousers": "denim", "pants": map[interface{}]interface{}{"size": "large"}}, v.Get("clothing"))
+	assert.Equal(t, map[string]interface{}{"jacket": "leather", "trousers": "denim", "pants": map[string]interface{}{"size": "large"}}, v.Get("clothing"))
 	assert.Equal(t, 35, v.Get("age"))
 }
 
@@ -743,7 +764,7 @@ func TestWrongDirsSearchNotFound(t *testing.T) {
 	v.AddConfigPath(`thispathaintthere`)
 
 	err := v.ReadInConfig()
-	assert.Equal(t, reflect.TypeOf(UnsupportedConfigError("")), reflect.TypeOf(err))
+	assert.Equal(t, reflect.TypeOf(ConfigFileNotFoundError{"", ""}), reflect.TypeOf(err))
 
 	// Even though config did not load and the error might have
 	// been ignored by the client, the default still loads
@@ -913,12 +934,27 @@ func TestUnmarshalingWithAliases(t *testing.T) {
 func TestSetConfigNameClearsFileCache(t *testing.T) {
 	SetConfigFile("/tmp/config.yaml")
 	SetConfigName("default")
-	assert.Empty(t, v.getConfigFile())
+	f, err := v.getConfigFile()
+	if err == nil {
+		t.Fatalf("config file cache should have been cleared")
+	}
+	assert.Empty(t, f)
 }
 
 func TestShadowedNestedValue(t *testing.T) {
+
+	config := `name: steve
+clothing:
+  jacket: leather
+  trousers: denim
+  pants:
+    size: large
+`
+	initConfig("yaml", config)
+
+	assert.Equal(t, "steve", GetString("name"))
+
 	polyester := "polyester"
-	initYAML()
 	SetDefault("clothing.shirt", polyester)
 	SetDefault("clothing.jacket.price", 100)
 
@@ -942,16 +978,122 @@ func TestDotParameter(t *testing.T) {
 	assert.Equal(t, expected, actual)
 }
 
-func TestGetBool(t *testing.T) {
-	key := "BooleanKey"
-	v = New()
-	v.Set(key, true)
-	if !v.GetBool(key) {
-		t.Fatal("GetBool returned false")
+func TestCaseInsensitive(t *testing.T) {
+	for _, config := range []struct {
+		typ     string
+		content string
+	}{
+		{"yaml", `
+aBcD: 1
+eF:
+  gH: 2
+  iJk: 3
+  Lm:
+    nO: 4
+    P:
+      Q: 5
+      R: 6
+`},
+		{"json", `{
+  "aBcD": 1,
+  "eF": {
+    "iJk": 3,
+    "Lm": {
+      "P": {
+        "Q": 5,
+        "R": 6
+      },
+      "nO": 4
+    },
+    "gH": 2
+  }
+}`},
+		{"toml", `aBcD = 1
+[eF]
+gH = 2
+iJk = 3
+[eF.Lm]
+nO = 4
+[eF.Lm.P]
+Q = 5
+R = 6
+`},
+	} {
+		doTestCaseInsensitive(t, config.typ, config.content)
 	}
-	if v.GetBool("NotFound") {
-		t.Fatal("GetBool returned true")
+}
+
+func TestCaseInsensitiveSet(t *testing.T) {
+	Reset()
+	m1 := map[string]interface{}{
+		"Foo": 32,
+		"Bar": map[interface{}]interface {
+		}{
+			"ABc": "A",
+			"cDE": "B"},
 	}
+
+	m2 := map[string]interface{}{
+		"Foo": 52,
+		"Bar": map[interface{}]interface {
+		}{
+			"bCd": "A",
+			"eFG": "B"},
+	}
+
+	Set("Given1", m1)
+	Set("Number1", 42)
+
+	SetDefault("Given2", m2)
+	SetDefault("Number2", 52)
+
+	// Verify SetDefault
+	if v := Get("number2"); v != 52 {
+		t.Fatalf("Expected 52 got %q", v)
+	}
+
+	if v := Get("given2.foo"); v != 52 {
+		t.Fatalf("Expected 52 got %q", v)
+	}
+
+	if v := Get("given2.bar.bcd"); v != "A" {
+		t.Fatalf("Expected A got %q", v)
+	}
+
+	if _, ok := m2["Foo"]; !ok {
+		t.Fatal("Input map changed")
+	}
+
+	// Verify Set
+	if v := Get("number1"); v != 42 {
+		t.Fatalf("Expected 42 got %q", v)
+	}
+
+	if v := Get("given1.foo"); v != 32 {
+		t.Fatalf("Expected 32 got %q", v)
+	}
+
+	if v := Get("given1.bar.abc"); v != "A" {
+		t.Fatalf("Expected A got %q", v)
+	}
+
+	if _, ok := m1["Foo"]; !ok {
+		t.Fatal("Input map changed")
+	}
+}
+
+func doTestCaseInsensitive(t *testing.T, typ, config string) {
+	initConfig(typ, config)
+	Set("RfD", true)
+	assert.Equal(t, true, Get("rfd"))
+	assert.Equal(t, true, Get("rFD"))
+	assert.Equal(t, 1, cast.ToInt(Get("abcd")))
+	assert.Equal(t, 1, cast.ToInt(Get("Abcd")))
+	assert.Equal(t, 2, cast.ToInt(Get("ef.gh")))
+	assert.Equal(t, 3, cast.ToInt(Get("ef.ijk")))
+	assert.Equal(t, 4, cast.ToInt(Get("ef.lm.no")))
+	assert.Equal(t, 5, cast.ToInt(Get("ef.lm.p.q")))
+
 }
 
 func BenchmarkGetBool(b *testing.B) {
@@ -962,6 +1104,18 @@ func BenchmarkGetBool(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		if !v.GetBool(key) {
 			b.Fatal("GetBool returned false")
+		}
+	}
+}
+
+func BenchmarkGet(b *testing.B) {
+	key := "BenchmarkGet"
+	v = New()
+	v.Set(key, true)
+
+	for i := 0; i < b.N; i++ {
+		if !v.Get(key).(bool) {
+			b.Fatal("Get returned false")
 		}
 	}
 }

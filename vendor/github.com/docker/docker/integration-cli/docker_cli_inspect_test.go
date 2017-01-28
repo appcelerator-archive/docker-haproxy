@@ -407,3 +407,43 @@ func (s *DockerSuite) TestInspectRootFS(c *check.C) {
 
 	c.Assert(len(imageJSON[0].RootFS.Layers), checker.GreaterOrEqualThan, 1)
 }
+
+func (s *DockerSuite) TestInspectAmpersand(c *check.C) {
+	testRequires(c, DaemonIsLinux)
+
+	name := "test"
+	out, _ := dockerCmd(c, "run", "--name", name, "--env", `TEST_ENV="soanni&rtr"`, "busybox", "env")
+	c.Assert(out, checker.Contains, `soanni&rtr`)
+	out, _ = dockerCmd(c, "inspect", name)
+	c.Assert(out, checker.Contains, `soanni&rtr`)
+}
+
+func (s *DockerSuite) TestInspectPlugin(c *check.C) {
+	testRequires(c, DaemonIsLinux, Network)
+	_, _, err := dockerCmdWithError("plugin", "install", "--grant-all-permissions", pNameWithTag)
+	c.Assert(err, checker.IsNil)
+
+	out, _, err := dockerCmdWithError("inspect", "--type", "plugin", "--format", "{{.Name}}", pNameWithTag)
+	c.Assert(err, checker.IsNil)
+	c.Assert(strings.TrimSpace(out), checker.Equals, pName)
+
+	out, _, err = dockerCmdWithError("inspect", "--format", "{{.Name}}", pNameWithTag)
+	c.Assert(err, checker.IsNil)
+	c.Assert(strings.TrimSpace(out), checker.Equals, pName)
+
+	// Even without tag the inspect still work
+	out, _, err = dockerCmdWithError("inspect", "--type", "plugin", "--format", "{{.Name}}", pName)
+	c.Assert(err, checker.IsNil)
+	c.Assert(strings.TrimSpace(out), checker.Equals, pName)
+
+	out, _, err = dockerCmdWithError("inspect", "--format", "{{.Name}}", pName)
+	c.Assert(err, checker.IsNil)
+	c.Assert(strings.TrimSpace(out), checker.Equals, pName)
+
+	_, _, err = dockerCmdWithError("plugin", "disable", pNameWithTag)
+	c.Assert(err, checker.IsNil)
+
+	out, _, err = dockerCmdWithError("plugin", "remove", pNameWithTag)
+	c.Assert(err, checker.IsNil)
+	c.Assert(out, checker.Contains, pNameWithTag)
+}

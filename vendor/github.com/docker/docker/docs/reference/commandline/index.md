@@ -1,16 +1,18 @@
-<!-- [metadata]>
-+++
-title = "Docker commands"
-description = "Docker's CLI command description and usage"
-keywords = ["Docker, Docker documentation, CLI,  command line"]
-[menu.main]
-identifier= "smn_cli_guide"
-parent = "smn_cli"
-weight=-70
-+++
-<![end-metadata]-->
+---
+title: "Docker commands"
+description: "Docker's CLI command description and usage"
+keywords: "Docker, Docker documentation, CLI, command line"
+identifier: "smn_cli_guide"
+---
 
-
+<!-- This file is maintained within the docker/docker Github
+     repository at https://github.com/docker/docker/. Make all
+     pull requests against that repo. If you see this file in
+     another repository, consider it read-only there, as it will
+     periodically be overwritten by the definitive file. Pull
+     requests which include edits to this file in other repositories
+     will be rejected.
+-->
 
 # The Docker commands
 
@@ -115,7 +117,7 @@ read the [`dockerd`](dockerd.md) reference page.
 | [node demote](node_demote.md) | Demotes an existing manager so that it is no longer a manager |
 | [node inspect](node_inspect.md) | Inspect a node in the swarm                |
 | [node update](node_update.md) | Update attributes for a node                 |
-| [node ps](node_ps.md) | List tasks running on a node                         |
+| [node ps](node_ps.md) | List tasks running on one or more nodes                         |
 | [node ls](node_ls.md) | List nodes in the swarm                              |
 | [node rm](node_rm.md) | Remove one or more nodes from the swarm                         |
 
@@ -136,7 +138,7 @@ read the [`dockerd`](dockerd.md) reference page.
 | [service create](service_create.md) | Create a new service                   |
 | [service inspect](service_inspect.md) | Inspect a service                    |
 | [service ls](service_ls.md) | List services in the swarm                     |
-| [service rm](service_rm.md) | Reemove a swervice from the swarm              |
+| [service rm](service_rm.md) | Remove a service from the swarm                |
 | [service scale](service_scale.md) | Set the number of replicas for the desired state of the service |
 | [service ps](service_ps.md) | List the tasks of a service              |
 | [service update](service_update.md)  | Update the attributes of a service    |

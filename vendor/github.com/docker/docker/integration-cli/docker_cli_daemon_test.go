@@ -643,6 +643,24 @@ func (s *DockerDaemonSuite) TestDaemonBridgeExternal(c *check.C) {
 			containerIP))
 }
 
+func (s *DockerDaemonSuite) TestDaemonBridgeNone(c *check.C) {
+	// start with bridge none
+	d := s.d
+	err := d.StartWithBusybox("--bridge", "none")
+	c.Assert(err, check.IsNil)
+	defer d.Restart()
+
+	// verify docker0 iface is not there
+	out, _, err := runCommandWithOutput(exec.Command("ifconfig", "docker0"))
+	c.Assert(err, check.NotNil, check.Commentf("docker0 should not be present if daemon started with --bridge=none"))
+	c.Assert(strings.Contains(out, "Device not found"), check.Equals, true)
+
+	// verify default "bridge" network is not there
+	out, err = d.Cmd("network", "inspect", "bridge")
+	c.Assert(err, check.NotNil, check.Commentf("\"bridge\" network should not be present if daemon started with --bridge=none"))
+	c.Assert(strings.Contains(out, "No such network"), check.Equals, true)
+}
+
 func createInterface(c *check.C, ifType string, ifName string, ipNet string) (string, error) {
 	args := []string{"link", "add", "name", ifName, "type", ifType}
 	ipLinkCmd := exec.Command("ip", args...)
@@ -1247,49 +1265,6 @@ func (s *DockerDaemonSuite) TestDaemonLoggingDriverNoneLogsError(c *check.C) {
 	c.Assert(out, checker.Contains, expected)
 }
 
-func (s *DockerDaemonSuite) TestDaemonDots(c *check.C) {
-	if err := s.d.StartWithBusybox(); err != nil {
-		c.Fatal(err)
-	}
-
-	// Now create 4 containers
-	if _, err := s.d.Cmd("create", "busybox"); err != nil {
-		c.Fatalf("Error creating container: %q", err)
-	}
-	if _, err := s.d.Cmd("create", "busybox"); err != nil {
-		c.Fatalf("Error creating container: %q", err)
-	}
-	if _, err := s.d.Cmd("create", "busybox"); err != nil {
-		c.Fatalf("Error creating container: %q", err)
-	}
-	if _, err := s.d.Cmd("create", "busybox"); err != nil {
-		c.Fatalf("Error creating container: %q", err)
-	}
-
-	s.d.Stop()
-
-	s.d.Start("--log-level=debug")
-	s.d.Stop()
-	content, _ := ioutil.ReadFile(s.d.logFile.Name())
-	if strings.Contains(string(content), "....") {
-		c.Fatalf("Debug level should not have ....\n%s", string(content))
-	}
-
-	s.d.Start("--log-level=error")
-	s.d.Stop()
-	content, _ = ioutil.ReadFile(s.d.logFile.Name())
-	if strings.Contains(string(content), "....") {
-		c.Fatalf("Error level should not have ....\n%s", string(content))
-	}
-
-	s.d.Start("--log-level=info")
-	s.d.Stop()
-	content, _ = ioutil.ReadFile(s.d.logFile.Name())
-	if !strings.Contains(string(content), "....") {
-		c.Fatalf("Info level should have ....\n%s", string(content))
-	}
-}
-
 func (s *DockerDaemonSuite) TestDaemonUnixSockCleanedUp(c *check.C) {
 	dir, err := ioutil.TempDir("", "socket-cleanup-test")
 	if err != nil {
@@ -1409,8 +1384,8 @@ func (s *DockerDaemonSuite) TestDaemonRestartKillWait(c *check.C) {
 	}
 }
 
-// TestHttpsInfo connects via two-way authenticated HTTPS to the info endpoint
-func (s *DockerDaemonSuite) TestHttpsInfo(c *check.C) {
+// TestHTTPSInfo connects via two-way authenticated HTTPS to the info endpoint
+func (s *DockerDaemonSuite) TestHTTPSInfo(c *check.C) {
 	const (
 		testDaemonHTTPSAddr = "tcp://localhost:4271"
 	)
@@ -1433,9 +1408,9 @@ func (s *DockerDaemonSuite) TestHttpsInfo(c *check.C) {
 	}
 }
 
-// TestHttpsRun connects via two-way authenticated HTTPS to the create, attach, start, and wait endpoints.
+// TestHTTPSRun connects via two-way authenticated HTTPS to the create, attach, start, and wait endpoints.
 // https://github.com/docker/docker/issues/19280
-func (s *DockerDaemonSuite) TestHttpsRun(c *check.C) {
+func (s *DockerDaemonSuite) TestHTTPSRun(c *check.C) {
 	const (
 		testDaemonHTTPSAddr = "tcp://localhost:4271"
 	)
@@ -1462,17 +1437,17 @@ func (s *DockerDaemonSuite) TestHttpsRun(c *check.C) {
 	}
 }
 
-// TestTlsVerify verifies that --tlsverify=false turns on tls
-func (s *DockerDaemonSuite) TestTlsVerify(c *check.C) {
+// TestTLSVerify verifies that --tlsverify=false turns on tls
+func (s *DockerDaemonSuite) TestTLSVerify(c *check.C) {
 	out, err := exec.Command(dockerdBinary, "--tlsverify=false").CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "Could not load X509 key pair") {
 		c.Fatalf("Daemon should not have started due to missing certs: %v\n%s", err, string(out))
 	}
 }
 
-// TestHttpsInfoRogueCert connects via two-way authenticated HTTPS to the info endpoint
+// TestHTTPSInfoRogueCert connects via two-way authenticated HTTPS to the info endpoint
 // by using a rogue client certificate and checks that it fails with the expected error.
-func (s *DockerDaemonSuite) TestHttpsInfoRogueCert(c *check.C) {
+func (s *DockerDaemonSuite) TestHTTPSInfoRogueCert(c *check.C) {
 	const (
 		errBadCertificate   = "bad certificate"
 		testDaemonHTTPSAddr = "tcp://localhost:4271"
@@ -1496,9 +1471,9 @@ func (s *DockerDaemonSuite) TestHttpsInfoRogueCert(c *check.C) {
 	}
 }
 
-// TestHttpsInfoRogueServerCert connects via two-way authenticated HTTPS to the info endpoint
+// TestHTTPSInfoRogueServerCert connects via two-way authenticated HTTPS to the info endpoint
 // which provides a rogue server certificate and checks that it fails with the expected error
-func (s *DockerDaemonSuite) TestHttpsInfoRogueServerCert(c *check.C) {
+func (s *DockerDaemonSuite) TestHTTPSInfoRogueServerCert(c *check.C) {
 	const (
 		errCaUnknown             = "x509: certificate signed by unknown authority"
 		testDaemonRogueHTTPSAddr = "tcp://localhost:4272"
@@ -1696,7 +1671,7 @@ func (s *DockerDaemonSuite) TestDaemonRestartCleanupNetns(c *check.C) {
 }
 
 // tests regression detailed in #13964 where DOCKER_TLS_VERIFY env is ignored
-func (s *DockerDaemonSuite) TestDaemonNoTlsCliTlsVerifyWithEnv(c *check.C) {
+func (s *DockerDaemonSuite) TestDaemonTLSVerifyIssue13964(c *check.C) {
 	host := "tcp://localhost:4271"
 	c.Assert(s.d.Start("-H", host), check.IsNil)
 	cmd := exec.Command(dockerBinary, "-H", host, "info")
@@ -1846,7 +1821,7 @@ func (s *DockerDaemonSuite) TestDaemonStartWithoutHost(c *check.C) {
 	c.Assert(s.d.Start(), check.IsNil)
 }
 
-func (s *DockerDaemonSuite) TestDaemonStartWithDefalutTlsHost(c *check.C) {
+func (s *DockerDaemonSuite) TestDaemonStartWithDefalutTLSHost(c *check.C) {
 	s.d.useDefaultTLSHost = true
 	defer func() {
 		s.d.useDefaultTLSHost = false
@@ -2760,11 +2735,9 @@ func (s *DockerDaemonSuite) TestDaemonRestartSaveContainerExitCode(c *check.C) {
 	c.Assert(err, checker.IsNil)
 
 	containerName := "error-values"
-	runError := "oci runtime error: exec: \"toto\": executable file not found in $PATH"
 	// Make a container with both a non 0 exit code and an error message
 	out, err := s.d.Cmd("run", "--name", containerName, "busybox", "toto")
 	c.Assert(err, checker.NotNil)
-	c.Assert(out, checker.Contains, runError)
 
 	// Check that those values were saved on disk
 	out, err = s.d.Cmd("inspect", "-f", "{{.State.ExitCode}}", containerName)
@@ -2775,7 +2748,6 @@ func (s *DockerDaemonSuite) TestDaemonRestartSaveContainerExitCode(c *check.C) {
 	out, err = s.d.Cmd("inspect", "-f", "{{.State.Error}}", containerName)
 	out = strings.TrimSpace(out)
 	c.Assert(err, checker.IsNil)
-	c.Assert(out, checker.Equals, runError)
 
 	// now restart daemon
 	err = s.d.Restart()
@@ -2790,7 +2762,6 @@ func (s *DockerDaemonSuite) TestDaemonRestartSaveContainerExitCode(c *check.C) {
 	out, err = s.d.Cmd("inspect", "-f", "{{.State.Error}}", containerName)
 	out = strings.TrimSpace(out)
 	c.Assert(err, checker.IsNil)
-	c.Assert(out, checker.Equals, runError)
 }
 
 func (s *DockerDaemonSuite) TestDaemonBackcompatPre17Volumes(c *check.C) {
@@ -2871,4 +2842,88 @@ func (s *DockerDaemonSuite) TestDaemonBackcompatPre17Volumes(c *check.C) {
 		}
 		c.Assert(matched, checker.True, check.Commentf("did find match for %+v", m))
 	}
+}
+
+func (s *DockerDaemonSuite) TestDaemonWithUserlandProxyPath(c *check.C) {
+	testRequires(c, SameHostDaemon, DaemonIsLinux)
+
+	dockerProxyPath, err := exec.LookPath("docker-proxy")
+	c.Assert(err, checker.IsNil)
+	tmpDir, err := ioutil.TempDir("", "test-docker-proxy")
+	c.Assert(err, checker.IsNil)
+
+	newProxyPath := filepath.Join(tmpDir, "docker-proxy")
+	cmd := exec.Command("cp", dockerProxyPath, newProxyPath)
+	c.Assert(cmd.Run(), checker.IsNil)
+
+	// custom one
+	c.Assert(s.d.StartWithBusybox("--userland-proxy-path", newProxyPath), checker.IsNil)
+	out, err := s.d.Cmd("run", "-p", "5000:5000", "busybox:latest", "true")
+	c.Assert(err, checker.IsNil, check.Commentf(out))
+
+	// try with the original one
+	c.Assert(s.d.Restart("--userland-proxy-path", dockerProxyPath), checker.IsNil)
+	out, err = s.d.Cmd("run", "-p", "5000:5000", "busybox:latest", "true")
+	c.Assert(err, checker.IsNil, check.Commentf(out))
+
+	// not exist
+	c.Assert(s.d.Restart("--userland-proxy-path", "/does/not/exist"), checker.IsNil)
+	out, err = s.d.Cmd("run", "-p", "5000:5000", "busybox:latest", "true")
+	c.Assert(err, checker.NotNil, check.Commentf(out))
+	c.Assert(out, checker.Contains, "driver failed programming external connectivity on endpoint")
+	c.Assert(out, checker.Contains, "/does/not/exist: no such file or directory")
+}
+
+// Test case for #22471
+func (s *DockerDaemonSuite) TestDaemonShutdownTimeout(c *check.C) {
+	testRequires(c, SameHostDaemon)
+
+	c.Assert(s.d.StartWithBusybox("--shutdown-timeout=3"), check.IsNil)
+
+	_, err := s.d.Cmd("run", "-d", "busybox", "top")
+	c.Assert(err, check.IsNil)
+
+	syscall.Kill(s.d.cmd.Process.Pid, syscall.SIGINT)
+
+	select {
+	case <-s.d.wait:
+	case <-time.After(5 * time.Second):
+	}
+
+	expectedMessage := `level=debug msg="start clean shutdown of all containers with a 3 seconds timeout..."`
+	content, _ := ioutil.ReadFile(s.d.logFile.Name())
+	c.Assert(string(content), checker.Contains, expectedMessage)
+}
+
+// Test case for #22471
+func (s *DockerDaemonSuite) TestDaemonShutdownTimeoutWithConfigFile(c *check.C) {
+	testRequires(c, SameHostDaemon)
+
+	// daemon config file
+	configFilePath := "test.json"
+	configFile, err := os.Create(configFilePath)
+	c.Assert(err, checker.IsNil)
+	defer os.Remove(configFilePath)
+
+	daemonConfig := `{ "shutdown-timeout" : 8 }`
+	fmt.Fprintf(configFile, "%s", daemonConfig)
+	configFile.Close()
+	c.Assert(s.d.Start(fmt.Sprintf("--config-file=%s", configFilePath)), check.IsNil)
+
+	configFile, err = os.Create(configFilePath)
+	c.Assert(err, checker.IsNil)
+	daemonConfig = `{ "shutdown-timeout" : 5 }`
+	fmt.Fprintf(configFile, "%s", daemonConfig)
+	configFile.Close()
+
+	syscall.Kill(s.d.cmd.Process.Pid, syscall.SIGHUP)
+
+	select {
+	case <-s.d.wait:
+	case <-time.After(3 * time.Second):
+	}
+
+	expectedMessage := `level=debug msg="Reset Shutdown Timeout: 5"`
+	content, _ := ioutil.ReadFile(s.d.logFile.Name())
+	c.Assert(string(content), checker.Contains, expectedMessage)
 }

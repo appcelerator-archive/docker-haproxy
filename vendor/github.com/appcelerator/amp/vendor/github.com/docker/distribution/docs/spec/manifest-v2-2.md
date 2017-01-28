@@ -1,16 +1,12 @@
-<!--[metadata]>
-+++
-title = "Image Manifest V 2, Schema 2 "
-description = "image manifest for the Registry."
-keywords = ["registry, on-prem, images, tags, repository, distribution, api, advanced, manifest"]
-[menu.main]
-parent="smn_registry_ref"
-+++
-<![end-metadata]-->
+---
+title: "Image Manifest V 2, Schema 2 "
+description: "image manifest for the Registry."
+keywords: ["registry, on-prem, images, tags, repository, distribution, api, advanced, manifest"]
+---
 
 # Image Manifest Version 2, Schema 2
 
-This document outlines the format of of the V2 image manifest, schema version 2.
+This document outlines the format of the V2 image manifest, schema version 2.
 The original (and provisional) image manifest for V2 (schema 1), was introduced
 in the Docker daemon in the [v1.3.0
 release](https://github.com/docker/docker/commit/9f482a66ab37ec396ac61ed0c00d59122ac07453)
@@ -34,6 +30,7 @@ the resources they reference:
 - `application/vnd.docker.container.image.v1+json`: Container config JSON
 - `application/vnd.docker.image.rootfs.diff.tar.gzip`: "Layer", as a gzipped tar
 - `application/vnd.docker.image.rootfs.foreign.diff.tar.gzip`: "Layer", as a gzipped tar that should never be pushed
+- `application/vnd.docker.plugin.v1+json`: Plugin config JSON
 
 ## Manifest List
 

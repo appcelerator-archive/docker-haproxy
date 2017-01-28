@@ -1,5 +1,3 @@
-// +build experimental
-
 package plugin
 
 import (
@@ -32,14 +30,12 @@ type eventLogger func(id, name, action string)
 
 // Manager controls the plugin subsystem.
 type Manager struct {
-	sync.RWMutex
 	libRoot           string
 	runRoot           string
-	pluginStore       *store.PluginStore
+	pluginStore       *store.Store
 	containerdClient  libcontainerd.Client
 	registryService   registry.Service
 	liveRestore       bool
-	shutdown          bool
 	pluginEventLogger eventLogger
 }
 
@@ -50,7 +46,7 @@ func GetManager() *Manager {
 
 // Init (was NewManager) instantiates the singleton Manager.
 // TODO: revert this to NewManager once we get rid of all the singletons.
-func Init(root string, remote libcontainerd.Remote, rs registry.Service, liveRestore bool, evL eventLogger) (err error) {
+func Init(root string, ps *store.Store, remote libcontainerd.Remote, rs registry.Service, liveRestore bool, evL eventLogger) (err error) {
 	if manager != nil {
 		return nil
 	}
@@ -59,7 +55,7 @@ func Init(root string, remote libcontainerd.Remote, rs registry.Service, liveRes
 	manager = &Manager{
 		libRoot:           root,
 		runRoot:           "/run/docker",
-		pluginStore:       store.NewPluginStore(root),
+		pluginStore:       ps,
 		registryService:   rs,
 		liveRestore:       liveRestore,
 		pluginEventLogger: evL,
@@ -83,37 +79,22 @@ func (pm *Manager) StateChanged(id string, e libcontainerd.StateInfo) error {
 
 	switch e.State {
 	case libcontainerd.StateExit:
-		var shutdown bool
-		pm.RLock()
-		shutdown = pm.shutdown
-		pm.RUnlock()
-		if shutdown {
-			p, err := pm.pluginStore.GetByID(id)
-			if err != nil {
-				return err
-			}
+		p, err := pm.pluginStore.GetByID(id)
+		if err != nil {
+			return err
+		}
+		p.RLock()
+		if p.ExitChan != nil {
 			close(p.ExitChan)
+		}
+		restart := p.Restart
+		p.RUnlock()
+		p.RemoveFromDisk()
+		if restart {
+			pm.enable(p, true)
 		}
 	}
 
-	return nil
-}
-
-// AttachStreams attaches io streams to the plugin
-func (pm *Manager) AttachStreams(id string, iop libcontainerd.IOPipe) error {
-	iop.Stdin.Close()
-
-	logger := logrus.New()
-	logger.Hooks.Add(logHook{id})
-	// TODO: cache writer per id
-	w := logger.Writer()
-	go func() {
-		io.Copy(w, iop.Stdout)
-	}()
-	go func() {
-		// TODO: update logrus and use logger.WriterLevel
-		io.Copy(w, iop.Stderr)
-	}()
 	return nil
 }
 
@@ -143,7 +124,7 @@ func (pm *Manager) init() error {
 				return
 			}
 
-			pm.pluginStore.Add(p)
+			pm.pluginStore.Update(p)
 			requiresManualRestore := !pm.liveRestore && p.IsEnabled()
 
 			if requiresManualRestore {
@@ -167,4 +148,23 @@ func (logHook) Levels() []logrus.Level {
 func (l logHook) Fire(entry *logrus.Entry) error {
 	entry.Data = logrus.Fields{"plugin": l.id}
 	return nil
+}
+
+func attachToLog(id string) func(libcontainerd.IOPipe) error {
+	return func(iop libcontainerd.IOPipe) error {
+		iop.Stdin.Close()
+
+		logger := logrus.New()
+		logger.Hooks.Add(logHook{id})
+		// TODO: cache writer per id
+		w := logger.Writer()
+		go func() {
+			io.Copy(w, iop.Stdout)
+		}()
+		go func() {
+			// TODO: update logrus and use logger.WriterLevel
+			io.Copy(w, iop.Stderr)
+		}()
+		return nil
+	}
 }

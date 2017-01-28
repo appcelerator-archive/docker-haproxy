@@ -1,60 +1,44 @@
-// +build experimental
-
 package store
 
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/ioutils"
+	"github.com/docker/docker/pkg/plugingetter"
 	"github.com/docker/docker/pkg/plugins"
 	"github.com/docker/docker/plugin/v2"
 	"github.com/docker/docker/reference"
 )
 
-var (
-	store *PluginStore
-	/* allowV1PluginsFallback determines daemon's support for V1 plugins.
-	 * When the time comes to remove support for V1 plugins, flipping
-	 * this bool is all that will be needed.
-	 */
-	allowV1PluginsFallback = true
-)
+/* allowV1PluginsFallback determines daemon's support for V1 plugins.
+ * When the time comes to remove support for V1 plugins, flipping
+ * this bool is all that will be needed.
+ */
+const allowV1PluginsFallback bool = true
+
+/* defaultAPIVersion is the version of the plugin API for volume, network,
+   IPAM and authz. This is a very stable API. When we update this API, then
+   pluginType should include a version. eg "networkdriver/2.0".
+*/
+const defaultAPIVersion string = "1.0"
 
 // ErrNotFound indicates that a plugin was not found locally.
 type ErrNotFound string
 
 func (name ErrNotFound) Error() string { return fmt.Sprintf("plugin %q not found", string(name)) }
 
-// PluginStore manages the plugin inventory in memory and on-disk
-type PluginStore struct {
-	sync.RWMutex
-	plugins map[string]*v2.Plugin
-	/* handlers are necessary for transition path of legacy plugins
-	 * to the new model. Legacy plugins use Handle() for registering an
-	 * activation callback.*/
-	handlers map[string]func(string, *plugins.Client)
-	nameToID map[string]string
-	plugindb string
-}
+// ErrAmbiguous indicates that a plugin was not found locally.
+type ErrAmbiguous string
 
-// NewPluginStore creates a PluginStore.
-func NewPluginStore(libRoot string) *PluginStore {
-	store = &PluginStore{
-		plugins:  make(map[string]*v2.Plugin),
-		handlers: make(map[string]func(string, *plugins.Client)),
-		nameToID: make(map[string]string),
-		plugindb: filepath.Join(libRoot, "plugins.json"),
-	}
-	return store
+func (name ErrAmbiguous) Error() string {
+	return fmt.Sprintf("multiple plugins found for %q", string(name))
 }
 
 // GetByName retreives a plugin by name.
-func (ps *PluginStore) GetByName(name string) (*v2.Plugin, error) {
+func (ps *Store) GetByName(name string) (*v2.Plugin, error) {
 	ps.RLock()
 	defer ps.RUnlock()
 
@@ -71,7 +55,7 @@ func (ps *PluginStore) GetByName(name string) (*v2.Plugin, error) {
 }
 
 // GetByID retreives a plugin by ID.
-func (ps *PluginStore) GetByID(id string) (*v2.Plugin, error) {
+func (ps *Store) GetByID(id string) (*v2.Plugin, error) {
 	ps.RLock()
 	defer ps.RUnlock()
 
@@ -83,45 +67,36 @@ func (ps *PluginStore) GetByID(id string) (*v2.Plugin, error) {
 }
 
 // GetAll retreives all plugins.
-func (ps *PluginStore) GetAll() map[string]*v2.Plugin {
+func (ps *Store) GetAll() map[string]*v2.Plugin {
 	ps.RLock()
 	defer ps.RUnlock()
 	return ps.plugins
 }
 
 // SetAll initialized plugins during daemon restore.
-func (ps *PluginStore) SetAll(plugins map[string]*v2.Plugin) {
+func (ps *Store) SetAll(plugins map[string]*v2.Plugin) {
 	ps.Lock()
 	defer ps.Unlock()
 	ps.plugins = plugins
 }
 
-func (ps *PluginStore) getByCap(name string, capability string) (*v2.Plugin, error) {
+func (ps *Store) getAllByCap(capability string) []plugingetter.CompatPlugin {
 	ps.RLock()
 	defer ps.RUnlock()
 
-	p, err := ps.GetByName(name)
-	if err != nil {
-		return nil, err
-	}
-	return p.FilterByCap(capability)
-}
-
-func (ps *PluginStore) getAllByCap(capability string) []CompatPlugin {
-	ps.RLock()
-	defer ps.RUnlock()
-
-	result := make([]CompatPlugin, 0, 1)
+	result := make([]plugingetter.CompatPlugin, 0, 1)
 	for _, p := range ps.plugins {
-		if _, err := p.FilterByCap(capability); err == nil {
-			result = append(result, p)
+		if p.IsEnabled() {
+			if _, err := p.FilterByCap(capability); err == nil {
+				result = append(result, p)
+			}
 		}
 	}
 	return result
 }
 
 // SetState sets the active state of the plugin and updates plugindb.
-func (ps *PluginStore) SetState(p *v2.Plugin, state bool) {
+func (ps *Store) SetState(p *v2.Plugin, state bool) {
 	ps.Lock()
 	defer ps.Unlock()
 
@@ -130,26 +105,44 @@ func (ps *PluginStore) SetState(p *v2.Plugin, state bool) {
 }
 
 // Add adds a plugin to memory and plugindb.
-func (ps *PluginStore) Add(p *v2.Plugin) {
+// An error will be returned if there is a collision.
+func (ps *Store) Add(p *v2.Plugin) error {
 	ps.Lock()
+	defer ps.Unlock()
+
+	if v, exist := ps.plugins[p.GetID()]; exist {
+		return fmt.Errorf("plugin %q has the same ID %s as %q", p.Name(), p.GetID(), v.Name())
+	}
+	if _, exist := ps.nameToID[p.Name()]; exist {
+		return fmt.Errorf("plugin %q already exists", p.Name())
+	}
 	ps.plugins[p.GetID()] = p
 	ps.nameToID[p.Name()] = p.GetID()
 	ps.updatePluginDB()
-	ps.Unlock()
+	return nil
 }
 
-// Remove removes a plugin from memory, plugindb and disk.
-func (ps *PluginStore) Remove(p *v2.Plugin) {
+// Update updates a plugin to memory and plugindb.
+func (ps *Store) Update(p *v2.Plugin) {
+	ps.Lock()
+	defer ps.Unlock()
+
+	ps.plugins[p.GetID()] = p
+	ps.nameToID[p.Name()] = p.GetID()
+	ps.updatePluginDB()
+}
+
+// Remove removes a plugin from memory and plugindb.
+func (ps *Store) Remove(p *v2.Plugin) {
 	ps.Lock()
 	delete(ps.plugins, p.GetID())
 	delete(ps.nameToID, p.Name())
 	ps.updatePluginDB()
-	p.RemoveFromDisk()
 	ps.Unlock()
 }
 
 // Callers are expected to hold the store lock.
-func (ps *PluginStore) updatePluginDB() error {
+func (ps *Store) updatePluginDB() error {
 	jsonData, err := json.Marshal(ps.plugins)
 	if err != nil {
 		logrus.Debugf("Error in json.Marshal: %v", err)
@@ -159,15 +152,15 @@ func (ps *PluginStore) updatePluginDB() error {
 	return nil
 }
 
-// LookupWithCapability returns a plugin matching the given name and capability.
-func LookupWithCapability(name, capability string) (CompatPlugin, error) {
+// Get returns an enabled plugin matching the given name and capability.
+func (ps *Store) Get(name, capability string, mode int) (plugingetter.CompatPlugin, error) {
 	var (
 		p   *v2.Plugin
 		err error
 	)
 
 	// Lookup using new model.
-	if store != nil {
+	if ps != nil {
 		fullName := name
 		if named, err := reference.ParseNamed(fullName); err == nil { // FIXME: validate
 			if reference.IsNameOnly(named) {
@@ -179,9 +172,17 @@ func LookupWithCapability(name, capability string) (CompatPlugin, error) {
 			}
 			fullName = ref.String()
 		}
-		p, err = store.GetByName(fullName)
+		p, err = ps.GetByName(fullName)
 		if err == nil {
-			return p.FilterByCap(capability)
+			p.Lock()
+			p.RefCount += mode
+			p.Unlock()
+			if p.IsEnabled() {
+				return p.FilterByCap(capability)
+			}
+			// Plugin was found but it is disabled, so we should not fall back to legacy plugins
+			// but we should error out right away
+			return nil, ErrNotFound(fullName)
 		}
 		if _, ok := err.(ErrNotFound); !ok {
 			return nil, err
@@ -200,9 +201,9 @@ func LookupWithCapability(name, capability string) (CompatPlugin, error) {
 	return nil, err
 }
 
-// FindWithCapability returns a list of plugins matching the given capability.
-func FindWithCapability(capability string) ([]CompatPlugin, error) {
-	result := make([]CompatPlugin, 0, 1)
+// GetAllByCap returns a list of enabled plugins matching the given capability.
+func (ps *Store) GetAllByCap(capability string) ([]plugingetter.CompatPlugin, error) {
+	result := make([]plugingetter.CompatPlugin, 0, 1)
 
 	/* Daemon start always calls plugin.Init thereby initializing a store.
 	 * So store on experimental builds can never be nil, even while
@@ -210,10 +211,10 @@ func FindWithCapability(capability string) ([]CompatPlugin, error) {
 	 * tests where the volume subsystem directly talks with the plugin,
 	 * bypassing the daemon. For such tests, this check is necessary.
 	 */
-	if store != nil {
-		store.RLock()
-		result = store.getAllByCap(capability)
-		store.RUnlock()
+	if ps != nil {
+		ps.RLock()
+		result = ps.getAllByCap(capability)
+		ps.RUnlock()
 	}
 
 	// Lookup with legacy model
@@ -232,11 +233,18 @@ func FindWithCapability(capability string) ([]CompatPlugin, error) {
 // Handle sets a callback for a given capability. It is only used by network
 // and ipam drivers during plugin registration. The callback registers the
 // driver with the subsystem (network, ipam).
-func Handle(capability string, callback func(string, *plugins.Client)) {
-	pluginType := fmt.Sprintf("docker.%s/1", strings.ToLower(capability))
+func (ps *Store) Handle(capability string, callback func(string, *plugins.Client)) {
+	pluginType := fmt.Sprintf("docker.%s/%s", strings.ToLower(capability), defaultAPIVersion)
 
 	// Register callback with new plugin model.
-	store.handlers[pluginType] = callback
+	ps.Lock()
+	handlers, ok := ps.handlers[pluginType]
+	if !ok {
+		handlers = []func(string, *plugins.Client){}
+	}
+	handlers = append(handlers, callback)
+	ps.handlers[pluginType] = handlers
+	ps.Unlock()
 
 	// Register callback with legacy plugin model.
 	if allowV1PluginsFallback {
@@ -245,10 +253,32 @@ func Handle(capability string, callback func(string, *plugins.Client)) {
 }
 
 // CallHandler calls the registered callback. It is invoked during plugin enable.
-func (ps *PluginStore) CallHandler(p *v2.Plugin) {
+func (ps *Store) CallHandler(p *v2.Plugin) {
 	for _, typ := range p.GetTypes() {
-		if handler := ps.handlers[typ.String()]; handler != nil {
+		for _, handler := range ps.handlers[typ.String()] {
 			handler(p.Name(), p.Client())
 		}
 	}
+}
+
+// Search retreives a plugin by ID Prefix
+// If no plugin is found, then ErrNotFound is returned
+// If multiple plugins are found, then ErrAmbiguous is returned
+func (ps *Store) Search(partialID string) (*v2.Plugin, error) {
+	ps.RLock()
+	defer ps.RUnlock()
+
+	var found *v2.Plugin
+	for id, p := range ps.plugins {
+		if strings.HasPrefix(id, partialID) {
+			if found != nil {
+				return nil, ErrAmbiguous(partialID)
+			}
+			found = p
+		}
+	}
+	if found == nil {
+		return nil, ErrNotFound(partialID)
+	}
+	return found, nil
 }

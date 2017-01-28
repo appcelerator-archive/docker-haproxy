@@ -13,12 +13,14 @@ import (
 
 var logsCmd = &cobra.Command{
 	Use:   "logs [OPTIONS] [SERVICE]",
-	Short: "Fetch log entries matching provided criteria. If provided, SERVICE can be a partial or full service id or service name.",
-	Run: func(cmd *cobra.Command, args []string) {
-		err := Logs(AMP, cmd, args)
+	Short: "Fetch log entries matching provided criteria",
+	Long:  `Fetch log entries matching provided criteria. If provided, SERVICE can be a partial or full service id or service name.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		err := AMP.Connect()
 		if err != nil {
-			fmt.Println(err)
+			return err
 		}
+		return Logs(AMP, cmd, args)
 	},
 }
 
@@ -29,7 +31,7 @@ func init() {
 	logsCmd.Flags().String("message", "", "Filter the message content by the given pattern")
 	logsCmd.Flags().BoolP("meta", "m", false, "Display entry metadata")
 	logsCmd.Flags().String("node", "", "Filter by the given node")
-	logsCmd.Flags().StringP("number", "n", "100", "Number of results")
+	logsCmd.Flags().StringP("number", "n", "1000", "Number of results")
 	logsCmd.Flags().String("stack", "", "Filter by the given stack")
 
 	RootCmd.AddCommand(logsCmd)
@@ -42,13 +44,14 @@ func Logs(amp *client.AMP, cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if amp.Verbose() {
-		fmt.Println("Logs")
-		fmt.Printf("stack: %v\n", cmd.Flag("stack").Value)
+		fmt.Println("Log flags:")
+		fmt.Printf("container: %v\n", cmd.Flag("container").Value)
+		fmt.Printf("follow: %v\n", cmd.Flag("follow").Value)
 		fmt.Printf("message: %v\n", cmd.Flag("message").Value)
-		fmt.Printf("container: %v\n", cmd.Flag("container_id").Value)
-		fmt.Printf("node: %v\n", cmd.Flag("node_id").Value)
-		fmt.Printf("n: %v\n", cmd.Flag("n").Value)
 		fmt.Printf("meta: %v\n", cmd.Flag("meta").Value)
+		fmt.Printf("node: %v\n", cmd.Flag("node").Value)
+		fmt.Printf("number: %v\n", cmd.Flag("number").Value)
+		fmt.Printf("stack: %v\n", cmd.Flag("stack").Value)
 	}
 
 	request := logs.GetRequest{}
@@ -71,7 +74,7 @@ func Logs(amp *client.AMP, cmd *cobra.Command, args []string) error {
 		log.Fatalf("Unable to convert f parameter: %v\n", cmd.Flag("f").Value.String())
 	}
 
-	// Get logs from elasticsearch
+	// Get logs from amplifier
 	c := logs.NewLogsClient(amp.Conn)
 	r, err := c.Get(ctx, &request)
 	if err != nil {

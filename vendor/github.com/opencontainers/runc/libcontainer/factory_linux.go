@@ -223,53 +223,56 @@ func (l *LinuxFactory) Type() string {
 // This is a low level implementation detail of the reexec and should not be consumed externally
 func (l *LinuxFactory) StartInitialization() (err error) {
 	var pipefd, rootfd int
-	for k, v := range map[string]*int{
-		"_LIBCONTAINER_INITPIPE": &pipefd,
-		"_LIBCONTAINER_STATEDIR": &rootfd,
+	for _, pair := range []struct {
+		k string
+		v *int
+	}{
+		{"_LIBCONTAINER_INITPIPE", &pipefd},
+		{"_LIBCONTAINER_STATEDIR", &rootfd},
 	} {
-		s := os.Getenv(k)
+
+		s := os.Getenv(pair.k)
 
 		i, err := strconv.Atoi(s)
 		if err != nil {
-			return fmt.Errorf("unable to convert %s=%s to int", k, s)
+			return fmt.Errorf("unable to convert %s=%s to int", pair.k, s)
 		}
-		*v = i
+		*pair.v = i
 	}
 	var (
 		pipe = os.NewFile(uintptr(pipefd), "pipe")
 		it   = initType(os.Getenv("_LIBCONTAINER_INITTYPE"))
 	)
+	defer pipe.Close()
+
 	// clear the current process's environment to clean any libcontainer
 	// specific env vars.
 	os.Clearenv()
 
-	var i initer
 	defer func() {
 		// We have an error during the initialization of the container's init,
 		// send it back to the parent process in the form of an initError.
-		// If container's init successed, syscall.Exec will not return, hence
-		// this defer function will never be called.
-		if _, ok := i.(*linuxStandardInit); ok {
-			//  Synchronisation only necessary for standard init.
-			if werr := utils.WriteJSON(pipe, syncT{procError}); werr != nil {
-				panic(err)
-			}
+		if werr := utils.WriteJSON(pipe, syncT{procError}); werr != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return
 		}
 		if werr := utils.WriteJSON(pipe, newSystemError(err)); werr != nil {
-			panic(err)
+			fmt.Fprintln(os.Stderr, err)
+			return
 		}
-		// ensure that this pipe is always closed
-		pipe.Close()
 	}()
 	defer func() {
 		if e := recover(); e != nil {
 			err = fmt.Errorf("panic from initialization: %v, %v", e, string(debug.Stack()))
 		}
 	}()
-	i, err = newContainerInit(it, pipe, rootfd)
+
+	i, err := newContainerInit(it, pipe, rootfd)
 	if err != nil {
 		return err
 	}
+
+	// If Init succeeds, syscall.Exec will not return, hence none of the defers will be called.
 	return i.Init()
 }
 
@@ -277,7 +280,7 @@ func (l *LinuxFactory) loadState(root, id string) (*State, error) {
 	f, err := os.Open(filepath.Join(root, stateFilename))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, newGenericError(fmt.Errorf("container %q does not exists", id), ContainerNotExists)
+			return nil, newGenericError(fmt.Errorf("container %q does not exist", id), ContainerNotExists)
 		}
 		return nil, newGenericError(err, SystemError)
 	}

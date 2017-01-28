@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -33,11 +32,11 @@ func (s *containerRouter) getContainersJSON(ctx context.Context, w http.Response
 	}
 
 	config := &types.ContainerListOptions{
-		All:    httputils.BoolValue(r, "all"),
-		Size:   httputils.BoolValue(r, "size"),
-		Since:  r.Form.Get("since"),
-		Before: r.Form.Get("before"),
-		Filter: filter,
+		All:     httputils.BoolValue(r, "all"),
+		Size:    httputils.BoolValue(r, "size"),
+		Since:   r.Form.Get("since"),
+		Before:  r.Form.Get("before"),
+		Filters: filter,
 	}
 
 	if tmpLimit := r.Form.Get("limit"); tmpLimit != "" {
@@ -156,8 +155,8 @@ func (s *containerRouter) postContainersStart(ctx context.Context, w http.Respon
 	}
 
 	checkpoint := r.Form.Get("checkpoint")
-	validateHostname := versions.GreaterThanOrEqualTo(version, "1.24")
-	if err := s.backend.ContainerStart(vars["name"], hostConfig, validateHostname, checkpoint); err != nil {
+	checkpointDir := r.Form.Get("checkpoint-dir")
+	if err := s.backend.ContainerStart(vars["name"], hostConfig, checkpoint, checkpointDir); err != nil {
 		return err
 	}
 
@@ -170,7 +169,14 @@ func (s *containerRouter) postContainersStop(ctx context.Context, w http.Respons
 		return err
 	}
 
-	seconds, _ := strconv.Atoi(r.Form.Get("t"))
+	var seconds *int
+	if tmpSeconds := r.Form.Get("t"); tmpSeconds != "" {
+		valSeconds, err := strconv.Atoi(tmpSeconds)
+		if err != nil {
+			return err
+		}
+		seconds = &valSeconds
+	}
 
 	if err := s.backend.ContainerStop(vars["name"], seconds); err != nil {
 		return err
@@ -224,9 +230,16 @@ func (s *containerRouter) postContainersRestart(ctx context.Context, w http.Resp
 		return err
 	}
 
-	timeout, _ := strconv.Atoi(r.Form.Get("t"))
+	var seconds *int
+	if tmpSeconds := r.Form.Get("t"); tmpSeconds != "" {
+		valSeconds, err := strconv.Atoi(tmpSeconds)
+		if err != nil {
+			return err
+		}
+		seconds = &valSeconds
+	}
 
-	if err := s.backend.ContainerRestart(vars["name"], timeout); err != nil {
+	if err := s.backend.ContainerRestart(vars["name"], seconds); err != nil {
 		return err
 	}
 
@@ -269,8 +282,8 @@ func (s *containerRouter) postContainersWait(ctx context.Context, w http.Respons
 		return err
 	}
 
-	return httputils.WriteJSON(w, http.StatusOK, &types.ContainerWaitResponse{
-		StatusCode: status,
+	return httputils.WriteJSON(w, http.StatusOK, &container.ContainerWaitOKBody{
+		StatusCode: int64(status),
 	})
 }
 
@@ -318,7 +331,6 @@ func (s *containerRouter) postContainerUpdate(ctx context.Context, w http.Respon
 		return err
 	}
 
-	version := httputils.VersionFromContext(ctx)
 	var updateConfig container.UpdateConfig
 
 	decoder := json.NewDecoder(r.Body)
@@ -332,8 +344,7 @@ func (s *containerRouter) postContainerUpdate(ctx context.Context, w http.Respon
 	}
 
 	name := vars["name"]
-	validateHostname := versions.GreaterThanOrEqualTo(version, "1.24")
-	resp, err := s.backend.ContainerUpdate(name, hostConfig, validateHostname)
+	resp, err := s.backend.ContainerUpdate(name, hostConfig)
 	if err != nil {
 		return err
 	}
@@ -358,14 +369,13 @@ func (s *containerRouter) postContainersCreate(ctx context.Context, w http.Respo
 	version := httputils.VersionFromContext(ctx)
 	adjustCPUShares := versions.LessThan(version, "1.19")
 
-	validateHostname := versions.GreaterThanOrEqualTo(version, "1.24")
 	ccr, err := s.backend.ContainerCreate(types.ContainerCreateConfig{
 		Name:             name,
 		Config:           config,
 		HostConfig:       hostConfig,
 		NetworkingConfig: networkingConfig,
 		AdjustCPUShares:  adjustCPUShares,
-	}, validateHostname)
+	})
 	if err != nil {
 		return err
 	}
@@ -386,10 +396,6 @@ func (s *containerRouter) deleteContainers(ctx context.Context, w http.ResponseW
 	}
 
 	if err := s.backend.ContainerRm(name, config); err != nil {
-		// Force a 404 for the empty string
-		if strings.Contains(strings.ToLower(err.Error()), "prefix can't be empty") {
-			return fmt.Errorf("no such container: \"\"")
-		}
 		return err
 	}
 
@@ -528,4 +534,25 @@ func (s *containerRouter) wsContainersAttach(ctx context.Context, w http.Respons
 	default:
 	}
 	return err
+}
+
+func (s *containerRouter) postContainersPrune(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
+	if err := httputils.ParseForm(r); err != nil {
+		return err
+	}
+
+	if err := httputils.CheckForJSON(r); err != nil {
+		return err
+	}
+
+	var cfg types.ContainersPruneConfig
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		return err
+	}
+
+	pruneReport, err := s.backend.ContainersPrune(&cfg)
+	if err != nil {
+		return err
+	}
+	return httputils.WriteJSON(w, http.StatusOK, pruneReport)
 }

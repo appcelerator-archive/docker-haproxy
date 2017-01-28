@@ -1,7 +1,9 @@
 package libcontainerd
 
 import (
+	"fmt"
 	"io"
+	"io/ioutil"
 	"strings"
 	"syscall"
 	"time"
@@ -38,7 +40,7 @@ func (ctr *container) newProcess(friendlyName string) *process {
 
 // start starts a created container.
 // Caller needs to lock container ID before calling this method.
-func (ctr *container) start() error {
+func (ctr *container) start(attachStdio StdioCallback) error {
 	var err error
 	isServicing := false
 
@@ -79,6 +81,7 @@ func (ctr *container) start() error {
 	// Configure the environment for the process
 	createProcessParms.Environment = setupEnvironmentVariables(ctr.ociSpec.Process.Env)
 	createProcessParms.CommandLine = strings.Join(ctr.ociSpec.Process.Args, " ")
+	createProcessParms.User = ctr.ociSpec.Process.User.Username
 
 	// Start the command running in the container.
 	newProcess, err := ctr.hcsContainer.CreateProcess(createProcessParms)
@@ -104,8 +107,10 @@ func (ctr *container) start() error {
 		exitCode := ctr.waitProcessExitCode(&ctr.process)
 
 		if exitCode != 0 {
-			logrus.Warnf("libcontainerd: servicing container %s returned non-zero exit code %d", ctr.containerID, exitCode)
-			return ctr.terminate()
+			if err := ctr.terminate(); err != nil {
+				logrus.Warnf("libcontainerd: terminating servicing container %s failed: %s", ctr.containerID, err)
+			}
+			return fmt.Errorf("libcontainerd: servicing container %s returned non-zero exit code %d", ctr.containerID, exitCode)
 		}
 
 		return ctr.hcsContainer.WaitTimeout(time.Minute * 5)
@@ -128,10 +133,10 @@ func (ctr *container) start() error {
 
 	// Convert io.ReadClosers to io.Readers
 	if stdout != nil {
-		iopipe.Stdout = openReaderFromPipe(stdout)
+		iopipe.Stdout = ioutil.NopCloser(&autoClosingReader{ReadCloser: stdout})
 	}
 	if stderr != nil {
-		iopipe.Stderr = openReaderFromPipe(stderr)
+		iopipe.Stderr = ioutil.NopCloser(&autoClosingReader{ReadCloser: stderr})
 	}
 
 	// Save the PID
@@ -143,7 +148,7 @@ func (ctr *container) start() error {
 
 	ctr.client.appendContainer(ctr)
 
-	if err := ctr.client.backend.AttachStreams(ctr.containerID, *iopipe); err != nil {
+	if err := attachStdio(*iopipe); err != nil {
 		// OK to return the error here, as waitExit will handle tear-down in HCS
 		return err
 	}

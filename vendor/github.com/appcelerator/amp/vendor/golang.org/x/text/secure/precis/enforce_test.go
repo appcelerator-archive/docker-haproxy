@@ -205,28 +205,28 @@ var enforceTestCases = []struct {
 		{"\u0049", "\u0069", nil},
 		{"\u03D2", "", errDisallowedRune},
 		{"\u03B0", "\u03B0", nil},
-		{"foo bar", "", bidirule.ErrInvalid},
-		{"♚", "", bidirule.ErrInvalid},
-		{"\u007E", "", bidirule.ErrInvalid}, // disallowed by bidi rule
+		{"foo bar", "", errDisallowedRune},
+		{"♚", "", errDisallowedRune},
+		{"\u007E", "~", nil},
 		{"a", "a", nil},
-		{"!", "", bidirule.ErrInvalid}, // disallowed by bidi rule
-		{"²", "", bidirule.ErrInvalid},
-		{"\t", "", bidirule.ErrInvalid},
-		{"\n", "", bidirule.ErrInvalid},
-		{"\u26D6", "", bidirule.ErrInvalid},
-		{"\u26FF", "", bidirule.ErrInvalid},
+		{"!", "!", nil},
+		{"²", "", errDisallowedRune},
+		{"\t", "", errDisallowedRune},
+		{"\n", "", errDisallowedRune},
+		{"\u26D6", "", errDisallowedRune},
+		{"\u26FF", "", errDisallowedRune},
 		{"\uFB00", "", errDisallowedRune},
-		{"\u1680", "", bidirule.ErrInvalid},
-		{" ", "", bidirule.ErrInvalid},
-		{"  ", "", bidirule.ErrInvalid},
+		{"\u1680", "", errDisallowedRune},
+		{" ", "", errDisallowedRune},
+		{"  ", "", errDisallowedRune},
 		{"\u01C5", "", errDisallowedRune},
-		{"\u16EE", "", errDisallowedRune},   // Nl RUNIC ARLAUG SYMBOL
-		{"\u0488", "", bidirule.ErrInvalid}, // Me COMBINING CYRILLIC HUNDRED THOUSANDS SIGN
-		{"\u212B", "\u00e5", nil},           // Angstrom sign, NFC -> U+00E5
-		{"A\u030A", "å", nil},               // A + ring
-		{"\u00C5", "å", nil},                // A with ring
-		{"\u00E7", "ç", nil},                // c cedille
-		{"\u0063\u0327", "ç", nil},          // c + cedille
+		{"\u16EE", "", errDisallowedRune}, // Nl RUNIC ARLAUG SYMBOL
+		{"\u0488", "", errDisallowedRune}, // Me COMBINING CYRILLIC HUNDRED THOUSANDS SIGN
+		{"\u212B", "\u00e5", nil},         // Angstrom sign, NFC -> U+00E5
+		{"A\u030A", "å", nil},             // A + ring
+		{"\u00C5", "å", nil},              // A with ring
+		{"\u00E7", "ç", nil},              // c cedille
+		{"\u0063\u0327", "ç", nil},        // c + cedille
 		{"\u0158", "ř", nil},
 		{"\u0052\u030C", "ř", nil},
 
@@ -290,4 +290,31 @@ func TestAppend(t *testing.T) {
 			t.Errorf("got %+q (err: %v); want %+q (err: %v)", string(e), err, tc.output, tc.err)
 		}
 	})
+}
+
+func TestStringMallocs(t *testing.T) {
+	if n := testtext.AllocsPerRun(100, func() { UsernameCaseMapped.String("helloworld") }); n > 0 {
+		// TODO: reduce this to 0.
+		t.Skipf("got %f allocs, want 0", n)
+	}
+}
+
+func TestAppendMallocs(t *testing.T) {
+	str := []byte("helloworld")
+	out := make([]byte, 0, len(str))
+	if n := testtext.AllocsPerRun(100, func() { UsernameCaseMapped.Append(out, str) }); n > 0 {
+		t.Errorf("got %f allocs, want 0", n)
+	}
+}
+
+func TestTransformMallocs(t *testing.T) {
+	str := []byte("helloworld")
+	out := make([]byte, 0, len(str))
+	tr := UsernameCaseMapped.NewTransformer()
+	if n := testtext.AllocsPerRun(100, func() {
+		tr.Reset()
+		tr.Transform(out, str, true)
+	}); n > 0 {
+		t.Errorf("got %f allocs, want 0", n)
+	}
 }

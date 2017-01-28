@@ -16,7 +16,7 @@ import (
 var psCommand = cli.Command{
 	Name:      "ps",
 	Usage:     "ps displays the processes running inside a container",
-	ArgsUsage: `<container-id> [-- ps options]`,
+	ArgsUsage: `<container-id> [ps options]`,
 	Flags: []cli.Flag{
 		cli.StringFlag{
 			Name:  "format, f",
@@ -25,6 +25,9 @@ var psCommand = cli.Command{
 		},
 	},
 	Action: func(context *cli.Context) error {
+		if err := checkArgs(context, 1, minArgs); err != nil {
+			return err
+		}
 		container, err := getContainer(context)
 		if err != nil {
 			return err
@@ -36,10 +39,7 @@ var psCommand = cli.Command{
 		}
 
 		if context.String("format") == "json" {
-			if err := json.NewEncoder(os.Stdout).Encode(pids); err != nil {
-				return err
-			}
-			return nil
+			return json.NewEncoder(os.Stdout).Encode(pids)
 		}
 
 		// [1:] is to remove command name, ex:
@@ -47,18 +47,14 @@ var psCommand = cli.Command{
 		// psArgs:         [ps_arg1 ps_arg2 ...]
 		//
 		psArgs := context.Args()[1:]
-
-		if len(psArgs) > 0 && psArgs[0] == "--" {
-			psArgs = psArgs[1:]
-		}
-
 		if len(psArgs) == 0 {
 			psArgs = []string{"-ef"}
 		}
 
-		output, err := exec.Command("ps", psArgs...).Output()
+		cmd := exec.Command("ps", psArgs...)
+		output, err := cmd.CombinedOutput()
 		if err != nil {
-			return err
+			return fmt.Errorf("%s: %s", err, output)
 		}
 
 		lines := strings.Split(string(output), "\n")
@@ -87,6 +83,7 @@ var psCommand = cli.Command{
 		}
 		return nil
 	},
+	SkipArgReorder: true,
 }
 
 func getPidIndex(title string) (int, error) {

@@ -103,6 +103,7 @@ type DriverParameters struct {
 func init() {
 	for _, region := range []string{
 		"us-east-1",
+		"us-east-2",
 		"us-west-1",
 		"us-west-2",
 		"eu-west-1",
@@ -389,29 +390,19 @@ func New(params DriverParameters) (*Driver, error) {
 	}
 
 	awsConfig := aws.NewConfig()
-	var creds *credentials.Credentials
-	if params.RegionEndpoint == "" {
-		creds = credentials.NewChainCredentials([]credentials.Provider{
-			&credentials.StaticProvider{
-				Value: credentials.Value{
-					AccessKeyID:     params.AccessKey,
-					SecretAccessKey: params.SecretKey,
-				},
+	creds := credentials.NewChainCredentials([]credentials.Provider{
+		&credentials.StaticProvider{
+			Value: credentials.Value{
+				AccessKeyID:     params.AccessKey,
+				SecretAccessKey: params.SecretKey,
 			},
-			&credentials.EnvProvider{},
-			&credentials.SharedCredentialsProvider{},
-			&ec2rolecreds.EC2RoleProvider{Client: ec2metadata.New(session.New())},
-		})
-	} else {
-		creds = credentials.NewChainCredentials([]credentials.Provider{
-			&credentials.StaticProvider{
-				Value: credentials.Value{
-					AccessKeyID:     params.AccessKey,
-					SecretAccessKey: params.SecretKey,
-				},
-			},
-			&credentials.EnvProvider{},
-		})
+		},
+		&credentials.EnvProvider{},
+		&credentials.SharedCredentialsProvider{},
+		&ec2rolecreds.EC2RoleProvider{Client: ec2metadata.New(session.New())},
+	})
+
+	if params.RegionEndpoint != "" {
 		awsConfig.WithS3ForcePathStyle(true)
 		awsConfig.WithEndpoint(params.RegionEndpoint)
 	}
@@ -784,10 +775,12 @@ func min(a, b int) int {
 // We must be careful since S3 does not guarantee read after delete consistency
 func (d *driver) Delete(ctx context.Context, path string) error {
 	s3Objects := make([]*s3.ObjectIdentifier, 0, listMax)
+	s3Path := d.s3Path(path)
 	listObjectsInput := &s3.ListObjectsInput{
 		Bucket: aws.String(d.Bucket),
-		Prefix: aws.String(d.s3Path(path)),
+		Prefix: aws.String(s3Path),
 	}
+ListLoop:
 	for {
 		// list all the objects
 		resp, err := d.S3.ListObjects(listObjectsInput)
@@ -800,6 +793,10 @@ func (d *driver) Delete(ctx context.Context, path string) error {
 		}
 
 		for _, key := range resp.Contents {
+			// Stop if we encounter a key that is not a subpath (so that deleting "/a" does not delete "/ab").
+			if len(*key.Key) > len(s3Path) && (*key.Key)[len(s3Path)] != '/' {
+				break ListLoop
+			}
 			s3Objects = append(s3Objects, &s3.ObjectIdentifier{
 				Key: key.Key,
 			})

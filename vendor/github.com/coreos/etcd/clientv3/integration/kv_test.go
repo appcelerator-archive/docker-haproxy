@@ -17,6 +17,7 @@ package integration
 import (
 	"bytes"
 	"math/rand"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -35,8 +36,8 @@ func TestKVPutError(t *testing.T) {
 	defer testutil.AfterTest(t)
 
 	var (
-		maxReqBytes = 1.5 * 1024 * 1024
-		quota       = int64(maxReqBytes * 1.2)
+		maxReqBytes = 1.5 * 1024 * 1024 // hard coded max in v3_server.go
+		quota       = int64(int(maxReqBytes) + 8*os.Getpagesize())
 	)
 	clus := integration.NewClusterV3(t, &integration.ClusterConfig{Size: 1, QuotaBackendBytes: quota})
 	defer clus.Terminate(t)
@@ -49,7 +50,7 @@ func TestKVPutError(t *testing.T) {
 		t.Fatalf("expected %v, got %v", rpctypes.ErrEmptyKey, err)
 	}
 
-	_, err = kv.Put(ctx, "key", strings.Repeat("a", int(maxReqBytes+100))) // 1.5MB
+	_, err = kv.Put(ctx, "key", strings.Repeat("a", int(maxReqBytes+100)))
 	if err != rpctypes.ErrRequestTooLarge {
 		t.Fatalf("expected %v, got %v", rpctypes.ErrRequestTooLarge, err)
 	}
@@ -59,7 +60,7 @@ func TestKVPutError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(500 * time.Millisecond) // give enough time for commit
+	time.Sleep(1 * time.Second) // give enough time for commit
 
 	_, err = kv.Put(ctx, "foo2", strings.Repeat("a", int(maxReqBytes-50)))
 	if err != rpctypes.ErrNoSpace { // over quota
@@ -225,6 +226,21 @@ func TestKVRange(t *testing.T) {
 				{Key: []byte("fop"), Value: nil, CreateRevision: 9, ModRevision: 9, Version: 1},
 			},
 		},
+		// range all with SortByKey, missing sorting order (ASCEND by default)
+		{
+			"a", "x",
+			0,
+			[]clientv3.OpOption{clientv3.WithSort(clientv3.SortByKey, clientv3.SortNone)},
+
+			[]*mvccpb.KeyValue{
+				{Key: []byte("a"), Value: nil, CreateRevision: 2, ModRevision: 2, Version: 1},
+				{Key: []byte("b"), Value: nil, CreateRevision: 3, ModRevision: 3, Version: 1},
+				{Key: []byte("c"), Value: nil, CreateRevision: 4, ModRevision: 6, Version: 3},
+				{Key: []byte("foo"), Value: nil, CreateRevision: 7, ModRevision: 7, Version: 1},
+				{Key: []byte("foo/abc"), Value: nil, CreateRevision: 8, ModRevision: 8, Version: 1},
+				{Key: []byte("fop"), Value: nil, CreateRevision: 9, ModRevision: 9, Version: 1},
+			},
+		},
 		// range all with SortByCreateRevision, SortDescend
 		{
 			"a", "x",
@@ -238,6 +254,21 @@ func TestKVRange(t *testing.T) {
 				{Key: []byte("c"), Value: nil, CreateRevision: 4, ModRevision: 6, Version: 3},
 				{Key: []byte("b"), Value: nil, CreateRevision: 3, ModRevision: 3, Version: 1},
 				{Key: []byte("a"), Value: nil, CreateRevision: 2, ModRevision: 2, Version: 1},
+			},
+		},
+		// range all with SortByCreateRevision, missing sorting order (ASCEND by default)
+		{
+			"a", "x",
+			0,
+			[]clientv3.OpOption{clientv3.WithSort(clientv3.SortByCreateRevision, clientv3.SortNone)},
+
+			[]*mvccpb.KeyValue{
+				{Key: []byte("a"), Value: nil, CreateRevision: 2, ModRevision: 2, Version: 1},
+				{Key: []byte("b"), Value: nil, CreateRevision: 3, ModRevision: 3, Version: 1},
+				{Key: []byte("c"), Value: nil, CreateRevision: 4, ModRevision: 6, Version: 3},
+				{Key: []byte("foo"), Value: nil, CreateRevision: 7, ModRevision: 7, Version: 1},
+				{Key: []byte("foo/abc"), Value: nil, CreateRevision: 8, ModRevision: 8, Version: 1},
+				{Key: []byte("fop"), Value: nil, CreateRevision: 9, ModRevision: 9, Version: 1},
 			},
 		},
 		// range all with SortByModRevision, SortDescend

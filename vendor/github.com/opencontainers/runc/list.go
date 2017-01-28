@@ -22,6 +22,8 @@ const formatOptions = `table or json`
 // containerState represents the platform agnostic pieces relating to a
 // running container's status and state
 type containerState struct {
+	// Version is the OCI version for the container
+	Version string `json:"ociVersion"`
 	// ID is the container ID
 	ID string `json:"id"`
 	// InitProcessPid is the init process id in the parent namespace
@@ -30,6 +32,8 @@ type containerState struct {
 	Status string `json:"status"`
 	// Bundle is the path on the filesystem to the bundle
 	Bundle string `json:"bundle"`
+	// Rootfs is a path to a directory containing the container's root filesystem.
+	Rootfs string `json:"rootfs"`
 	// Created is the unix timestamp for the creation time of the container in UTC
 	Created time.Time `json:"created"`
 	// Annotations is the user defined annotations added to the config.
@@ -63,6 +67,9 @@ To list containers created using a non-default value for "--root":
 		},
 	},
 	Action: func(context *cli.Context) error {
+		if err := checkArgs(context, 0, exactArgs); err != nil {
+			return err
+		}
 		s, err := getContainers(context)
 		if err != nil {
 			return err
@@ -140,10 +147,12 @@ func getContainers(context *cli.Context) ([]containerState, error) {
 			}
 			bundle, annotations := utils.Annotations(state.Config.Labels)
 			s = append(s, containerState{
+				Version:        state.BaseState.Config.Version,
 				ID:             state.BaseState.ID,
 				InitProcessPid: pid,
 				Status:         containerStatus.String(),
 				Bundle:         bundle,
+				Rootfs:         state.BaseState.Config.Rootfs,
 				Created:        state.BaseState.Created,
 				Annotations:    annotations,
 			})

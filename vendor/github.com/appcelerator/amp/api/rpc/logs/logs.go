@@ -2,38 +2,44 @@ package logs
 
 import (
 	"encoding/json"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"strings"
 
-	"github.com/Shopify/sarama"
+	"github.com/appcelerator/amp/config"
 	"github.com/appcelerator/amp/data/elasticsearch"
-	"github.com/appcelerator/amp/data/kafka"
 	"github.com/appcelerator/amp/data/storage"
+	"github.com/appcelerator/amp/pkg/nats-streaming"
 	"github.com/golang/protobuf/proto"
+	"github.com/nats-io/go-nats-streaming"
 	"golang.org/x/net/context"
 	"gopkg.in/olivere/elastic.v3"
+	"log"
 )
 
 const (
-	esIndex       = "amp-logs"
-	kafkaLogTopic = "amp-logs"
+	esIndex = "amp-logs"
 )
 
-// Logs is used to implement log.LogServer
-type Logs struct {
-	Es    elasticsearch.Elasticsearch
-	Store storage.Interface
-	Kafka kafka.Kafka
+// Server is used to implement log.LogServer
+type Server struct {
+	Es            *elasticsearch.Elasticsearch
+	Store         storage.Interface
+	NatsStreaming ns.NatsStreaming
 }
 
 // Get implements log.LogServer
-func (logs *Logs) Get(ctx context.Context, in *GetRequest) (*GetReply, error) {
+func (s *Server) Get(ctx context.Context, in *GetRequest) (*GetReply, error) {
 	// TODO: Authentication is disabled in order to allow tests. Re-enable this as soon as we have a way to auth in tests.
 	//_, err := oauth.CheckAuthorization(ctx, logs.Store)
 	//if err != nil {
 	//	return nil, err
 	//}
+
+	log.Println("rpc-logs: Get", in.String())
+
 	// Prepare request to elasticsearch
-	request := logs.Es.GetClient().Search().Index(esIndex)
+	request := s.Es.GetClient().Search().Index(esIndex)
 	request.Sort("time_id", false)
 	if in.Size != 0 {
 		request.Size(int(in.Size))
@@ -65,9 +71,9 @@ func (logs *Logs) Get(ctx context.Context, in *GetRequest) (*GetReply, error) {
 	// TODO timestamp queries
 
 	// Perform request
-	searchResult, err := request.Query(masterQuery).Do()
+	searchResult, err := request.Query(masterQuery).Do(ctx)
 	if err != nil {
-		return nil, err
+		return nil, grpc.Errorf(codes.FailedPrecondition, "%v", err)
 	}
 
 	// Build reply (from elasticsearch response)
@@ -76,7 +82,7 @@ func (logs *Logs) Get(ctx context.Context, in *GetRequest) (*GetReply, error) {
 	for i, hit := range searchResult.Hits.Hits {
 		entry, err := parseJSONLogEntry(*hit.Source)
 		if err != nil {
-			return nil, err
+			return nil, grpc.Errorf(codes.Internal, "%v", err)
 		}
 		reply.Entries[i] = &entry
 	}
@@ -85,33 +91,32 @@ func (logs *Logs) Get(ctx context.Context, in *GetRequest) (*GetReply, error) {
 	for i, j := 0, len(reply.Entries)-1; i < j; i, j = i+1, j-1 {
 		reply.Entries[i], reply.Entries[j] = reply.Entries[j], reply.Entries[i]
 	}
-
+	log.Printf("rpc-logs: Get successful, returned %d entries\n", len(reply.Entries))
 	return &reply, nil
 }
 
 // GetStream implements log.LogServer
-func (logs *Logs) GetStream(in *GetRequest, stream Logs_GetStreamServer) error {
-	consumer, err := logs.Kafka.NewConsumer()
+func (s *Server) GetStream(in *GetRequest, stream Logs_GetStreamServer) error {
+	log.Println("rpc-logs: GetStream", in.String())
+
+	sub, err := s.NatsStreaming.GetClient().Subscribe(amp.NatsLogsTopic, func(msg *stan.Msg) {
+		entry, err := parseProtoLogEntry(msg.Data)
+		if err != nil {
+			return
+		}
+		if filter(&entry, in) {
+			stream.Send(&entry)
+		}
+	})
 	if err != nil {
-		return err
-	}
-	partitionConsumer, err := consumer.ConsumePartition(kafkaLogTopic, 0, sarama.OffsetNewest)
-	if err != nil {
-		return err
+		sub.Unsubscribe()
+		return grpc.Errorf(codes.Internal, "%v", err)
 	}
 
 	for {
 		select {
-		case msg := <-partitionConsumer.Messages():
-			entry, err := parseProtoLogEntry(msg.Value)
-			if err != nil {
-				return err
-			}
-			if filter(&entry, in) {
-				stream.Send(&entry)
-			}
-
 		case <-stream.Context().Done():
+			sub.Unsubscribe()
 			return stream.Context().Err()
 		}
 	}

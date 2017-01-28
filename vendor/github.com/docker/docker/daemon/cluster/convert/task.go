@@ -21,7 +21,11 @@ func TaskFromGRPC(t swarmapi.Task) types.Task {
 	}
 
 	task := types.Task{
-		ID:        t.ID,
+		ID: t.ID,
+		Annotations: types.Annotations{
+			Name:   t.Annotations.Name,
+			Labels: t.Annotations.Labels,
+		},
 		ServiceID: t.ServiceID,
 		Slot:      int(t.Slot),
 		NodeID:    t.NodeID,
@@ -57,6 +61,20 @@ func TaskFromGRPC(t swarmapi.Task) types.Task {
 	// NetworksAttachments
 	for _, na := range t.Networks {
 		task.NetworksAttachments = append(task.NetworksAttachments, networkAttachementFromGRPC(na))
+	}
+
+	if t.Status.PortStatus == nil {
+		return task
+	}
+
+	for _, p := range t.Status.PortStatus.Ports {
+		task.Status.PortStatus.Ports = append(task.Status.PortStatus.Ports, types.PortConfig{
+			Name:          p.Name,
+			Protocol:      types.PortConfigProtocol(strings.ToLower(swarmapi.PortConfig_Protocol_name[int32(p.Protocol)])),
+			PublishMode:   types.PortConfigPublishMode(strings.ToLower(swarmapi.PortConfig_PublishMode_name[int32(p.PublishMode)])),
+			TargetPort:    p.TargetPort,
+			PublishedPort: p.PublishedPort,
+		})
 	}
 
 	return task

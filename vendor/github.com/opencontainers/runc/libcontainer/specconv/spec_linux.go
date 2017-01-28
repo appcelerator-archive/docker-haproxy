@@ -20,7 +20,7 @@ import (
 
 const wildcard = -1
 
-var namespaceMapping = map[specs.NamespaceType]configs.NamespaceType{
+var namespaceMapping = map[specs.LinuxNamespaceType]configs.NamespaceType{
 	specs.PIDNamespace:     configs.NEWPID,
 	specs.NetworkNamespace: configs.NEWNET,
 	specs.MountNamespace:   configs.NEWNS,
@@ -187,6 +187,9 @@ func CreateLibcontainerConfig(opts *CreateOpts) (*configs.Config, error) {
 		if !exists {
 			return nil, fmt.Errorf("namespace %q does not exist", ns)
 		}
+		if config.Namespaces.Contains(t) {
+			return nil, fmt.Errorf("malformed spec file: duplicated ns %q", ns)
+		}
 		config.Namespaces.Add(t, ns.Path)
 	}
 	if config.Namespaces.Contains(configs.NEWNET) {
@@ -234,7 +237,7 @@ func CreateLibcontainerConfig(opts *CreateOpts) (*configs.Config, error) {
 }
 
 func createLibcontainerMount(cwd string, m specs.Mount) *configs.Mount {
-	flags, pgflags, data := parseMountOptions(m.Options)
+	flags, pgflags, data, ext := parseMountOptions(m.Options)
 	source := m.Source
 	if m.Type == "bind" {
 		if !filepath.IsAbs(source) {
@@ -248,6 +251,7 @@ func createLibcontainerMount(cwd string, m specs.Mount) *configs.Mount {
 		Data:             data,
 		Flags:            flags,
 		PropagationFlags: pgflags,
+		Extensions:       ext,
 	}
 }
 
@@ -374,7 +378,7 @@ func createCgroupConfig(name string, useSystemdCgroup bool, spec *specs.Spec) (*
 		}
 	}
 	if r.Pids != nil {
-		c.Resources.PidsLimit = *r.Pids.Limit
+		c.Resources.PidsLimit = r.Pids.Limit
 	}
 	if r.BlockIO != nil {
 		if r.BlockIO.Weight != nil {
@@ -398,40 +402,28 @@ func createCgroupConfig(name string, useSystemdCgroup bool, spec *specs.Spec) (*
 		}
 		if r.BlockIO.ThrottleReadBpsDevice != nil {
 			for _, td := range r.BlockIO.ThrottleReadBpsDevice {
-				var rate uint64
-				if td.Rate != nil {
-					rate = *td.Rate
-				}
+				rate := td.Rate
 				throttleDevice := configs.NewThrottleDevice(td.Major, td.Minor, rate)
 				c.Resources.BlkioThrottleReadBpsDevice = append(c.Resources.BlkioThrottleReadBpsDevice, throttleDevice)
 			}
 		}
 		if r.BlockIO.ThrottleWriteBpsDevice != nil {
 			for _, td := range r.BlockIO.ThrottleWriteBpsDevice {
-				var rate uint64
-				if td.Rate != nil {
-					rate = *td.Rate
-				}
+				rate := td.Rate
 				throttleDevice := configs.NewThrottleDevice(td.Major, td.Minor, rate)
 				c.Resources.BlkioThrottleWriteBpsDevice = append(c.Resources.BlkioThrottleWriteBpsDevice, throttleDevice)
 			}
 		}
 		if r.BlockIO.ThrottleReadIOPSDevice != nil {
 			for _, td := range r.BlockIO.ThrottleReadIOPSDevice {
-				var rate uint64
-				if td.Rate != nil {
-					rate = *td.Rate
-				}
+				rate := td.Rate
 				throttleDevice := configs.NewThrottleDevice(td.Major, td.Minor, rate)
 				c.Resources.BlkioThrottleReadIOPSDevice = append(c.Resources.BlkioThrottleReadIOPSDevice, throttleDevice)
 			}
 		}
 		if r.BlockIO.ThrottleWriteIOPSDevice != nil {
 			for _, td := range r.BlockIO.ThrottleWriteIOPSDevice {
-				var rate uint64
-				if td.Rate != nil {
-					rate = *td.Rate
-				}
+				rate := td.Rate
 				throttleDevice := configs.NewThrottleDevice(td.Major, td.Minor, rate)
 				c.Resources.BlkioThrottleWriteIOPSDevice = append(c.Resources.BlkioThrottleWriteIOPSDevice, throttleDevice)
 			}
@@ -439,8 +431,8 @@ func createCgroupConfig(name string, useSystemdCgroup bool, spec *specs.Spec) (*
 	}
 	for _, l := range r.HugepageLimits {
 		c.Resources.HugetlbLimit = append(c.Resources.HugetlbLimit, &configs.HugepageLimit{
-			Pagesize: *l.Pagesize,
-			Limit:    *l.Limit,
+			Pagesize: l.Pagesize,
+			Limit:    l.Limit,
 		})
 	}
 	if r.DisableOOMKiller != nil {
@@ -534,6 +526,8 @@ func createDevices(spec *specs.Spec, config *configs.Config) error {
 	// merge in additional devices from the spec
 	for _, d := range spec.Linux.Devices {
 		var uid, gid uint32
+		var filemode os.FileMode = 0666
+
 		if d.UID != nil {
 			uid = *d.UID
 		}
@@ -544,12 +538,15 @@ func createDevices(spec *specs.Spec, config *configs.Config) error {
 		if err != nil {
 			return err
 		}
+		if d.FileMode != nil {
+			filemode = *d.FileMode
+		}
 		device := &configs.Device{
 			Type:     dt,
 			Path:     d.Path,
 			Major:    d.Major,
 			Minor:    d.Minor,
-			FileMode: *d.FileMode,
+			FileMode: filemode,
 			Uid:      uid,
 			Gid:      gid,
 		}
@@ -562,7 +559,7 @@ func setupUserNamespace(spec *specs.Spec, config *configs.Config) error {
 	if len(spec.Linux.UIDMappings) == 0 {
 		return nil
 	}
-	create := func(m specs.IDMapping) configs.IDMap {
+	create := func(m specs.LinuxIDMapping) configs.IDMap {
 		return configs.IDMap{
 			HostID:      int(m.HostID),
 			ContainerID: int(m.ContainerID),
@@ -592,11 +589,12 @@ func setupUserNamespace(spec *specs.Spec, config *configs.Config) error {
 
 // parseMountOptions parses the string and returns the flags, propagation
 // flags and any mount data that it contains.
-func parseMountOptions(options []string) (int, []int, string) {
+func parseMountOptions(options []string) (int, []int, string, int) {
 	var (
-		flag   int
-		pgflag []int
-		data   []string
+		flag     int
+		pgflag   []int
+		data     []string
+		extFlags int
 	)
 	flags := map[string]struct {
 		clear bool
@@ -638,6 +636,12 @@ func parseMountOptions(options []string) (int, []int, string) {
 		"rslave":      syscall.MS_SLAVE | syscall.MS_REC,
 		"runbindable": syscall.MS_UNBINDABLE | syscall.MS_REC,
 	}
+	extensionFlags := map[string]struct {
+		clear bool
+		flag  int
+	}{
+		"tmpcopyup": {false, configs.EXT_COPYUP},
+	}
 	for _, o := range options {
 		// If the option does not exist in the flags table or the flag
 		// is not supported on the platform,
@@ -650,14 +654,20 @@ func parseMountOptions(options []string) (int, []int, string) {
 			}
 		} else if f, exists := propagationFlags[o]; exists && f != 0 {
 			pgflag = append(pgflag, f)
+		} else if f, exists := extensionFlags[o]; exists && f.flag != 0 {
+			if f.clear {
+				extFlags &= ^f.flag
+			} else {
+				extFlags |= f.flag
+			}
 		} else {
 			data = append(data, o)
 		}
 	}
-	return flag, pgflag, strings.Join(data, ",")
+	return flag, pgflag, strings.Join(data, ","), extFlags
 }
 
-func setupSeccomp(config *specs.Seccomp) (*configs.Seccomp, error) {
+func setupSeccomp(config *specs.LinuxSeccomp) (*configs.Seccomp, error) {
 	if config == nil {
 		return nil, nil
 	}

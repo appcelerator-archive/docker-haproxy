@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"os"
@@ -1769,14 +1770,14 @@ func (s *DockerSuite) TestRunCleanupCmdOnEntrypoint(c *check.C) {
 	out = strings.TrimSpace(out)
 	expected := "root"
 	if daemonPlatform == "windows" {
-		if WindowsBaseImage == "windowsservercore" {
+		if strings.Contains(WindowsBaseImage, "windowsservercore") {
 			expected = `user manager\containeradministrator`
 		} else {
 			expected = `ContainerAdministrator` // nanoserver
 		}
 	}
 	if out != expected {
-		c.Fatalf("Expected output %s, got %q", expected, out)
+		c.Fatalf("Expected output %s, got %q. %s", expected, out, WindowsBaseImage)
 	}
 }
 
@@ -2623,7 +2624,7 @@ func (s *DockerSuite) TestRunModeUTSHost(c *check.C) {
 	c.Assert(out, checker.Contains, runconfig.ErrConflictUTSHostname.Error())
 }
 
-func (s *DockerSuite) TestRunTLSverify(c *check.C) {
+func (s *DockerSuite) TestRunTLSVerify(c *check.C) {
 	// Remote daemons use TLS and this test is not applicable when TLS is required.
 	testRequires(c, SameHostDaemon)
 	if out, code, err := dockerCmdWithError("ps"); err != nil || code != 0 {
@@ -3432,16 +3433,16 @@ func (s *DockerTrustSuite) TestTrustedRunFromBadTrustServer(c *check.C) {
 		c.Fatalf("Missing expected output on trusted push:\n%s", out)
 	}
 
-	// Now, try running with the original client from this new trust server. This should fallback to our cached timestamp and metadata.
+	// Now, try running with the original client from this new trust server. This should fail because the new root is invalid.
 	runCmd = exec.Command(dockerBinary, "run", repoName)
 	s.trustedCmd(runCmd)
 	out, _, err = runCommandWithOutput(runCmd)
 
-	if err != nil {
-		c.Fatalf("Error falling back to cached trust data: %s\n%s", err, out)
+	if err == nil {
+		c.Fatalf("Continuing with cached data even though it's an invalid root rotation: %s\n%s", err, out)
 	}
-	if !strings.Contains(string(out), "Error while downloading remote metadata, using cached timestamp") {
-		c.Fatalf("Missing expected output on trusted push:\n%s", out)
+	if !strings.Contains(out, "could not rotate trust to a new trusted root") {
+		c.Fatalf("Missing expected output on trusted run:\n%s", out)
 	}
 }
 
@@ -4201,7 +4202,7 @@ func (s *DockerSuite) TestRunVolumesMountedAsSlave(c *check.C) {
 	}
 
 	// Prepare a source directory with file in it. We will bind mount this
-	// direcotry and see if file shows up.
+	// directory and see if file shows up.
 	tmpDir2, err := ioutil.TempDir("", "volume-source2")
 	if err != nil {
 		c.Fatal(err)
@@ -4371,42 +4372,6 @@ func (s *DockerSuite) TestRunVolumeCopyFlag(c *check.C) {
 	c.Assert(err, checker.NotNil, check.Commentf(out))
 }
 
-func (s *DockerSuite) TestRunTooLongHostname(c *check.C) {
-	// Test case in #21445
-	hostname1 := "this-is-a-way-too-long-hostname-but-it-should-give-a-nice-error.local"
-	out, _, err := dockerCmdWithError("run", "--hostname", hostname1, "busybox", "echo", "test")
-	c.Assert(err, checker.NotNil, check.Commentf("Expected docker run to fail!"))
-	c.Assert(out, checker.Contains, "invalid hostname format:", check.Commentf("Expected to have 'invalid hostname format:' in the output, get: %s!", out))
-
-	// Additional test cases
-	validHostnames := map[string]string{
-		"hostname":    "hostname",
-		"host-name":   "host-name",
-		"hostname123": "hostname123",
-		"123hostname": "123hostname",
-		"hostname-of-63-bytes-long-should-be-valid-and-without-any-error": "hostname-of-63-bytes-long-should-be-valid-and-without-any-error",
-	}
-	for hostname := range validHostnames {
-		dockerCmd(c, "run", "--hostname", hostname, "busybox", "echo", "test")
-	}
-
-	invalidHostnames := map[string]string{
-		"^hostname": "invalid hostname format: ^hostname",
-		"hostname%": "invalid hostname format: hostname%",
-		"host&name": "invalid hostname format: host&name",
-		"-hostname": "invalid hostname format: -hostname",
-		"host_name": "invalid hostname format: host_name",
-		"hostname-of-64-bytes-long-should-be-invalid-and-be-with-an-error": "invalid hostname format: hostname-of-64-bytes-long-should-be-invalid-and-be-with-an-error",
-	}
-
-	for hostname, expectedError := range invalidHostnames {
-		out, _, err = dockerCmdWithError("run", "--hostname", hostname, "busybox", "echo", "test")
-		c.Assert(err, checker.NotNil, check.Commentf("Expected docker run to fail!"))
-		c.Assert(out, checker.Contains, expectedError, check.Commentf("Expected to have '%s' in the output, get: %s!", expectedError, out))
-
-	}
-}
-
 // Test case for #21976
 func (s *DockerSuite) TestRunDNSInHostMode(c *check.C) {
 	testRequires(c, DaemonIsLinux, NotUserNamespace)
@@ -4537,4 +4502,166 @@ func (s *DockerSuite) TestRunCredentialSpecFailures(c *check.C) {
 		c.Assert(err, checker.NotNil, check.Commentf("%s expected non-nil err", attempt.value))
 		c.Assert(err.Error(), checker.Contains, attempt.expectedError, check.Commentf("%s expected %s got %s", attempt.value, attempt.expectedError, err))
 	}
+}
+
+// Windows specific test to validate credential specs with a well-formed spec.
+// Note it won't actually do anything in CI configuration with the spec, but
+// it should not fail to run a container.
+func (s *DockerSuite) TestRunCredentialSpecWellFormed(c *check.C) {
+	testRequires(c, DaemonIsWindows, SameHostDaemon)
+	validCS := readFile(`fixtures\credentialspecs\valid.json`, c)
+	writeFile(filepath.Join(dockerBasePath, `credentialspecs\valid.json`), validCS, c)
+	dockerCmd(c, "run", `--security-opt=credentialspec=file://valid.json`, "busybox", "true")
+}
+
+// Windows specific test to ensure that a servicing app container is started
+// if necessary once a container exits. It does this by forcing a no-op
+// servicing event and verifying the event from Hyper-V-Compute
+func (s *DockerSuite) TestRunServicingContainer(c *check.C) {
+	testRequires(c, DaemonIsWindows, SameHostDaemon)
+
+	out, _ := dockerCmd(c, "run", "-d", WindowsBaseImage, "cmd", "/c", "mkdir c:\\programdata\\Microsoft\\Windows\\ContainerUpdates\\000_000_d99f45d0-ffc8-4af7-bd9c-ea6a62e035c9_200 && sc control cexecsvc 255")
+	containerID := strings.TrimSpace(out)
+	err := waitExited(containerID, 60*time.Second)
+	c.Assert(err, checker.IsNil)
+
+	cmd := exec.Command("powershell", "echo", `(Get-WinEvent -ProviderName "Microsoft-Windows-Hyper-V-Compute" -FilterXPath 'Event[System[EventID=2010]]' -MaxEvents 1).Message`)
+	out2, _, err := runCommandWithOutput(cmd)
+	c.Assert(err, checker.IsNil)
+	c.Assert(out2, checker.Contains, `"Servicing":true`, check.Commentf("Servicing container does not appear to have been started: %s", out2))
+	c.Assert(out2, checker.Contains, `Windows Container (Servicing)`, check.Commentf("Didn't find 'Windows Container (Servicing): %s", out2))
+	c.Assert(out2, checker.Contains, containerID+"_servicing", check.Commentf("Didn't find '%s_servicing': %s", containerID+"_servicing", out2))
+}
+
+func (s *DockerSuite) TestRunDuplicateMount(c *check.C) {
+	testRequires(c, SameHostDaemon, DaemonIsLinux, NotUserNamespace)
+
+	tmpFile, err := ioutil.TempFile("", "touch-me")
+	c.Assert(err, checker.IsNil)
+	defer tmpFile.Close()
+
+	data := "touch-me-foo-bar\n"
+	if _, err := tmpFile.Write([]byte(data)); err != nil {
+		c.Fatal(err)
+	}
+
+	name := "test"
+	out, _ := dockerCmd(c, "run", "--name", name, "-v", "/tmp:/tmp", "-v", "/tmp:/tmp", "busybox", "sh", "-c", "cat "+tmpFile.Name()+" && ls /")
+	c.Assert(out, checker.Not(checker.Contains), "tmp:")
+	c.Assert(out, checker.Contains, data)
+
+	out = inspectFieldJSON(c, name, "Config.Volumes")
+	c.Assert(out, checker.Contains, "null")
+}
+
+func (s *DockerSuite) TestRunWindowsWithCPUCount(c *check.C) {
+	testRequires(c, DaemonIsWindows)
+
+	out, _ := dockerCmd(c, "run", "--cpu-count=1", "--name", "test", "busybox", "echo", "testing")
+	c.Assert(strings.TrimSpace(out), checker.Equals, "testing")
+
+	out = inspectField(c, "test", "HostConfig.CPUCount")
+	c.Assert(out, check.Equals, "1")
+}
+
+func (s *DockerSuite) TestRunWindowsWithCPUShares(c *check.C) {
+	testRequires(c, DaemonIsWindows)
+
+	out, _ := dockerCmd(c, "run", "--cpu-shares=1000", "--name", "test", "busybox", "echo", "testing")
+	c.Assert(strings.TrimSpace(out), checker.Equals, "testing")
+
+	out = inspectField(c, "test", "HostConfig.CPUShares")
+	c.Assert(out, check.Equals, "1000")
+}
+
+func (s *DockerSuite) TestRunWindowsWithCPUPercent(c *check.C) {
+	testRequires(c, DaemonIsWindows)
+
+	out, _ := dockerCmd(c, "run", "--cpu-percent=80", "--name", "test", "busybox", "echo", "testing")
+	c.Assert(strings.TrimSpace(out), checker.Equals, "testing")
+
+	out = inspectField(c, "test", "HostConfig.CPUPercent")
+	c.Assert(out, check.Equals, "80")
+}
+
+func (s *DockerSuite) TestRunProcessIsolationWithCPUCountCPUSharesAndCPUPercent(c *check.C) {
+	testRequires(c, DaemonIsWindows, IsolationIsProcess)
+
+	out, _ := dockerCmd(c, "run", "--cpu-count=1", "--cpu-shares=1000", "--cpu-percent=80", "--name", "test", "busybox", "echo", "testing")
+	c.Assert(strings.TrimSpace(out), checker.Contains, "WARNING: Conflicting options: CPU count takes priority over CPU shares on Windows Server Containers. CPU shares discarded")
+	c.Assert(strings.TrimSpace(out), checker.Contains, "WARNING: Conflicting options: CPU count takes priority over CPU percent on Windows Server Containers. CPU percent discarded")
+	c.Assert(strings.TrimSpace(out), checker.Contains, "testing")
+
+	out = inspectField(c, "test", "HostConfig.CPUCount")
+	c.Assert(out, check.Equals, "1")
+
+	out = inspectField(c, "test", "HostConfig.CPUShares")
+	c.Assert(out, check.Equals, "0")
+
+	out = inspectField(c, "test", "HostConfig.CPUPercent")
+	c.Assert(out, check.Equals, "0")
+}
+
+func (s *DockerSuite) TestRunHypervIsolationWithCPUCountCPUSharesAndCPUPercent(c *check.C) {
+	testRequires(c, DaemonIsWindows, IsolationIsHyperv)
+
+	out, _ := dockerCmd(c, "run", "--cpu-count=1", "--cpu-shares=1000", "--cpu-percent=80", "--name", "test", "busybox", "echo", "testing")
+	c.Assert(strings.TrimSpace(out), checker.Contains, "testing")
+
+	out = inspectField(c, "test", "HostConfig.CPUCount")
+	c.Assert(out, check.Equals, "1")
+
+	out = inspectField(c, "test", "HostConfig.CPUShares")
+	c.Assert(out, check.Equals, "1000")
+
+	out = inspectField(c, "test", "HostConfig.CPUPercent")
+	c.Assert(out, check.Equals, "80")
+}
+
+// Test for #25099
+func (s *DockerSuite) TestRunEmptyEnv(c *check.C) {
+	testRequires(c, DaemonIsLinux)
+
+	expectedOutput := "invalid environment variable:"
+
+	out, _, err := dockerCmdWithError("run", "-e", "", "busybox", "true")
+	c.Assert(err, checker.NotNil)
+	c.Assert(out, checker.Contains, expectedOutput)
+
+	out, _, err = dockerCmdWithError("run", "-e", "=", "busybox", "true")
+	c.Assert(err, checker.NotNil)
+	c.Assert(out, checker.Contains, expectedOutput)
+
+	out, _, err = dockerCmdWithError("run", "-e", "=foo", "busybox", "true")
+	c.Assert(err, checker.NotNil)
+	c.Assert(out, checker.Contains, expectedOutput)
+}
+
+// #28658
+func (s *DockerSuite) TestSlowStdinClosing(c *check.C) {
+	name := "testslowstdinclosing"
+	repeat := 3 // regression happened 50% of the time
+	for i := 0; i < repeat; i++ {
+		cmd := exec.Command(dockerBinary, "run", "--rm", "--name", name, "-i", "busybox", "cat")
+		cmd.Stdin = &delayedReader{}
+		done := make(chan error, 1)
+		go func() {
+			_, err := runCommand(cmd)
+			done <- err
+		}()
+
+		select {
+		case <-time.After(15 * time.Second):
+			c.Fatal("running container timed out") // cleanup in teardown
+		case err := <-done:
+			c.Assert(err, checker.IsNil)
+		}
+	}
+}
+
+type delayedReader struct{}
+
+func (s *delayedReader) Read([]byte) (int, error) {
+	time.Sleep(500 * time.Millisecond)
+	return 0, io.EOF
 }

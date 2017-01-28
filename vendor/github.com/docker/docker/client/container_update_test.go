@@ -9,14 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"golang.org/x/net/context"
 )
 
 func TestContainerUpdateError(t *testing.T) {
 	client := &Client{
-		transport: newMockClient(nil, errorMock(http.StatusInternalServerError, "Server error")),
+		client: newMockClient(errorMock(http.StatusInternalServerError, "Server error")),
 	}
 	_, err := client.ContainerUpdate(context.Background(), "nothing", container.UpdateConfig{})
 	if err == nil || err.Error() != "Error response from daemon: Server error" {
@@ -28,12 +27,12 @@ func TestContainerUpdate(t *testing.T) {
 	expectedURL := "/containers/container_id/update"
 
 	client := &Client{
-		transport: newMockClient(nil, func(req *http.Request) (*http.Response, error) {
+		client: newMockClient(func(req *http.Request) (*http.Response, error) {
 			if !strings.HasPrefix(req.URL.Path, expectedURL) {
 				return nil, fmt.Errorf("Expected URL '%s', got '%s'", expectedURL, req.URL)
 			}
 
-			b, err := json.Marshal(types.ContainerUpdateResponse{})
+			b, err := json.Marshal(container.ContainerUpdateOKBody{})
 			if err != nil {
 				return nil, err
 			}

@@ -8,6 +8,8 @@ import (
 
 	"github.com/appcelerator/amp/data/influx"
 	"golang.org/x/net/context"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 )
 
 // Stats structure to implement StatsServer interface
@@ -65,8 +67,9 @@ func (s *Stats) StatsQuery(ctx context.Context, req *StatsRequest) (*StatsReply,
 		}
 		return ret, nil
 	}
-	sort.Sort(result)
-	return result, nil
+	clean := s.cleanUp(result)
+	sort.Sort(clean)
+	return clean, nil
 }
 
 func (s *Stats) addStatsResult(list *[4]*StatsReply, ret *StatsReply) {
@@ -91,14 +94,21 @@ func (s *Stats) combineStats(req *StatsRequest, list *[4]*StatsReply) *StatsRepl
 		if list[i] != nil {
 			ret := list[i]
 			for _, frow := range finalRet.Entries {
-				for _, row := range ret.Entries {
-					if s.isRowsMatch(req, frow, row) {
-						s.updateRow(frow, row)
+				//warning in some weird cases frow can be nil
+				if frow != nil {
+					for _, row := range ret.Entries {
+						//warning in some weird cases row can be nil
+						if row != nil {
+							if s.isRowsMatch(req, frow, row) {
+								s.updateRow(frow, row)
+							}
+						}
 					}
 				}
 			}
 		}
 	}
+
 	return finalRet
 
 }
@@ -155,6 +165,17 @@ func (s *Stats) updateRow(ref *StatsEntry, row *StatsEntry) {
 	}
 }
 
+func (s *Stats) cleanUp(result *StatsReply) *StatsReply {
+	ret := &StatsReply{}
+	for _, row := range result.Entries {
+		if row != nil {
+			ret.Entries = append(ret.Entries, row)
+		}
+	}
+	return ret
+
+}
+
 // statsQueryMetric extracts stat information according to StatsRequest for one  metric (cpu | mem | io | net)
 func (s *Stats) statQueryMetric(req *StatsRequest, metric string) (*StatsReply, error) {
 	idFieldName, metricFields := getMetricFieldsName(req, metric)
@@ -162,7 +183,7 @@ func (s *Stats) statQueryMetric(req *StatsRequest, metric string) (*StatsReply, 
 	fmt.Println("Influx query: " + query)
 	res, err := s.Influx.Query(query)
 	if err != nil {
-		return nil, err
+		return nil, grpc.Errorf(codes.Internal, "InfluxDB Query error: %v", err)
 	}
 	if len(res.Results[0].Series) == 0 {
 		ret := &StatsReply{

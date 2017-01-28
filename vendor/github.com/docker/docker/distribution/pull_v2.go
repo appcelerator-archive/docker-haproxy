@@ -50,7 +50,7 @@ func (e ImageConfigPullError) Error() string {
 }
 
 type v2Puller struct {
-	V2MetadataService *metadata.V2MetadataService
+	V2MetadataService metadata.V2MetadataService
 	endpoint          registry.APIEndpoint
 	config            *ImagePullConfig
 	repoInfo          *registry.RepositoryInfo
@@ -134,7 +134,7 @@ type v2LayerDescriptor struct {
 	digest            digest.Digest
 	repoInfo          *registry.RepositoryInfo
 	repo              distribution.Repository
-	V2MetadataService *metadata.V2MetadataService
+	V2MetadataService metadata.V2MetadataService
 	tmpFile           *os.File
 	verifier          digest.Verifier
 	src               distribution.Descriptor
@@ -189,9 +189,6 @@ func (ld *v2LayerDescriptor) Download(ctx context.Context, progressOutput progre
 	layerDownload, err := ld.open(ctx)
 	if err != nil {
 		logrus.Errorf("Error initiating layer download: %v", err)
-		if err == distribution.ErrBlobUnknown {
-			return nil, 0, xfer.DoNotRetry{Err: err}
-		}
 		return nil, 0, retryOnError(err)
 	}
 
@@ -338,9 +335,6 @@ func (p *v2Puller) pullV2Tag(ctx context.Context, ref reference.Named) (tagUpdat
 		tagOrDigest string // Used for logging/progress only
 	)
 	if tagged, isTagged := ref.(reference.NamedTagged); isTagged {
-		// NOTE: not using TagService.Get, since it uses HEAD requests
-		// against the manifests endpoint, which are not supported by
-		// all registry versions.
 		manifest, err = manSvc.Get(ctx, "", distribution.WithTag(tagged.Tag()))
 		if err != nil {
 			return false, allowV1Fallback(err)
@@ -361,7 +355,8 @@ func (p *v2Puller) pullV2Tag(ctx context.Context, ref reference.Named) (tagUpdat
 	}
 
 	if m, ok := manifest.(*schema2.DeserializedManifest); ok {
-		if m.Manifest.Config.MediaType == schema2.MediaTypePluginConfig {
+		if m.Manifest.Config.MediaType == schema2.MediaTypePluginConfig ||
+			m.Manifest.Config.MediaType == "application/vnd.docker.plugin.image.v0+json" { //TODO: remove this v0 before 1.13 GA
 			return false, errMediaTypePlugin
 		}
 	}
@@ -374,23 +369,23 @@ func (p *v2Puller) pullV2Tag(ctx context.Context, ref reference.Named) (tagUpdat
 	progress.Message(p.config.ProgressOutput, tagOrDigest, "Pulling from "+p.repo.Named().Name())
 
 	var (
-		imageID        image.ID
+		id             digest.Digest
 		manifestDigest digest.Digest
 	)
 
 	switch v := manifest.(type) {
 	case *schema1.SignedManifest:
-		imageID, manifestDigest, err = p.pullSchema1(ctx, ref, v)
+		id, manifestDigest, err = p.pullSchema1(ctx, ref, v)
 		if err != nil {
 			return false, err
 		}
 	case *schema2.DeserializedManifest:
-		imageID, manifestDigest, err = p.pullSchema2(ctx, ref, v)
+		id, manifestDigest, err = p.pullSchema2(ctx, ref, v)
 		if err != nil {
 			return false, err
 		}
 	case *manifestlist.DeserializedManifestList:
-		imageID, manifestDigest, err = p.pullManifestList(ctx, ref, v)
+		id, manifestDigest, err = p.pullManifestList(ctx, ref, v)
 		if err != nil {
 			return false, err
 		}
@@ -400,31 +395,31 @@ func (p *v2Puller) pullV2Tag(ctx context.Context, ref reference.Named) (tagUpdat
 
 	progress.Message(p.config.ProgressOutput, "", "Digest: "+manifestDigest.String())
 
-	oldTagImageID, err := p.config.ReferenceStore.Get(ref)
+	oldTagID, err := p.config.ReferenceStore.Get(ref)
 	if err == nil {
-		if oldTagImageID == imageID {
-			return false, addDigestReference(p.config.ReferenceStore, ref, manifestDigest, imageID)
+		if oldTagID == id {
+			return false, addDigestReference(p.config.ReferenceStore, ref, manifestDigest, id)
 		}
 	} else if err != reference.ErrDoesNotExist {
 		return false, err
 	}
 
 	if canonical, ok := ref.(reference.Canonical); ok {
-		if err = p.config.ReferenceStore.AddDigest(canonical, imageID, true); err != nil {
+		if err = p.config.ReferenceStore.AddDigest(canonical, id, true); err != nil {
 			return false, err
 		}
 	} else {
-		if err = addDigestReference(p.config.ReferenceStore, ref, manifestDigest, imageID); err != nil {
+		if err = addDigestReference(p.config.ReferenceStore, ref, manifestDigest, id); err != nil {
 			return false, err
 		}
-		if err = p.config.ReferenceStore.AddTag(ref, imageID, true); err != nil {
+		if err = p.config.ReferenceStore.AddTag(ref, id, true); err != nil {
 			return false, err
 		}
 	}
 	return true, nil
 }
 
-func (p *v2Puller) pullSchema1(ctx context.Context, ref reference.Named, unverifiedManifest *schema1.SignedManifest) (imageID image.ID, manifestDigest digest.Digest, err error) {
+func (p *v2Puller) pullSchema1(ctx context.Context, ref reference.Named, unverifiedManifest *schema1.SignedManifest) (id digest.Digest, manifestDigest digest.Digest, err error) {
 	var verifiedManifest *schema1.Manifest
 	verifiedManifest, err = verifySchema1Manifest(unverifiedManifest, ref)
 	if err != nil {
@@ -487,28 +482,27 @@ func (p *v2Puller) pullSchema1(ctx context.Context, ref reference.Named, unverif
 		return "", "", err
 	}
 
-	imageID, err = p.config.ImageStore.Create(config)
+	imageID, err := p.config.ImageStore.Create(config)
 	if err != nil {
 		return "", "", err
 	}
 
 	manifestDigest = digest.FromBytes(unverifiedManifest.Canonical)
 
-	return imageID, manifestDigest, nil
+	return imageID.Digest(), manifestDigest, nil
 }
 
-func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *schema2.DeserializedManifest) (imageID image.ID, manifestDigest digest.Digest, err error) {
+func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *schema2.DeserializedManifest) (id digest.Digest, manifestDigest digest.Digest, err error) {
 	manifestDigest, err = schema2ManifestDigest(ref, mfst)
 	if err != nil {
 		return "", "", err
 	}
 
 	target := mfst.Target()
-	imageID = image.ID(target.Digest)
-	if _, err := p.config.ImageStore.Get(imageID); err == nil {
+	if _, err := p.config.ImageStore.Get(image.IDFromDigest(target.Digest)); err == nil {
 		// If the image already exists locally, no need to pull
 		// anything.
-		return imageID, manifestDigest, nil
+		return target.Digest, manifestDigest, nil
 	}
 
 	var descriptors []xfer.DownloadDescriptor
@@ -534,7 +528,7 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 
 	// Pull the image config
 	go func() {
-		configJSON, err := p.pullSchema2ImageConfig(ctx, target.Digest)
+		configJSON, err := p.pullSchema2Config(ctx, target.Digest)
 		if err != nil {
 			errChan <- ImageConfigPullError{Err: err}
 			cancel()
@@ -618,12 +612,12 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 		}
 	}
 
-	imageID, err = p.config.ImageStore.Create(configJSON)
+	imageID, err := p.config.ImageStore.Create(configJSON)
 	if err != nil {
 		return "", "", err
 	}
 
-	return imageID, manifestDigest, nil
+	return imageID.Digest(), manifestDigest, nil
 }
 
 func receiveConfig(configChan <-chan []byte, errChan <-chan error) ([]byte, image.Image, error) {
@@ -643,7 +637,7 @@ func receiveConfig(configChan <-chan []byte, errChan <-chan error) ([]byte, imag
 
 // pullManifestList handles "manifest lists" which point to various
 // platform-specifc manifests.
-func (p *v2Puller) pullManifestList(ctx context.Context, ref reference.Named, mfstList *manifestlist.DeserializedManifestList) (imageID image.ID, manifestListDigest digest.Digest, err error) {
+func (p *v2Puller) pullManifestList(ctx context.Context, ref reference.Named, mfstList *manifestlist.DeserializedManifestList) (id digest.Digest, manifestListDigest digest.Digest, err error) {
 	manifestListDigest, err = schema2ManifestDigest(ref, mfstList)
 	if err != nil {
 		return "", "", err
@@ -674,19 +668,19 @@ func (p *v2Puller) pullManifestList(ctx context.Context, ref reference.Named, mf
 		return "", "", err
 	}
 
-	manifestRef, err := reference.WithDigest(ref, manifestDigest)
+	manifestRef, err := reference.WithDigest(reference.TrimNamed(ref), manifestDigest)
 	if err != nil {
 		return "", "", err
 	}
 
 	switch v := manifest.(type) {
 	case *schema1.SignedManifest:
-		imageID, _, err = p.pullSchema1(ctx, manifestRef, v)
+		id, _, err = p.pullSchema1(ctx, manifestRef, v)
 		if err != nil {
 			return "", "", err
 		}
 	case *schema2.DeserializedManifest:
-		imageID, _, err = p.pullSchema2(ctx, manifestRef, v)
+		id, _, err = p.pullSchema2(ctx, manifestRef, v)
 		if err != nil {
 			return "", "", err
 		}
@@ -694,10 +688,10 @@ func (p *v2Puller) pullManifestList(ctx context.Context, ref reference.Named, mf
 		return "", "", errors.New("unsupported manifest format")
 	}
 
-	return imageID, manifestListDigest, err
+	return id, manifestListDigest, err
 }
 
-func (p *v2Puller) pullSchema2ImageConfig(ctx context.Context, dgst digest.Digest) (configJSON []byte, err error) {
+func (p *v2Puller) pullSchema2Config(ctx context.Context, dgst digest.Digest) (configJSON []byte, err error) {
 	blobs := p.repo.Blobs(ctx)
 	configJSON, err = blobs.Get(ctx, dgst)
 	if err != nil {
@@ -833,7 +827,7 @@ func fixManifestLayers(m *schema1.Manifest) error {
 
 	if imgs[len(imgs)-1].Parent != "" && runtime.GOOS != "windows" {
 		// Windows base layer can point to a base layer parent that is not in manifest.
-		return errors.New("Invalid parent ID in the base layer of the image.")
+		return errors.New("invalid parent ID in the base layer of the image")
 	}
 
 	// check general duplicates to error instead of a deadlock

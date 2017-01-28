@@ -2,10 +2,16 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/appcelerator/amp/api/client"
 	"github.com/appcelerator/amp/cmd/amp/cli"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+)
+
+const (
+	tablePadding = 3
 )
 
 var (
@@ -19,30 +25,54 @@ var (
 	AMP *client.AMP
 
 	// Config is used by command implementations to access the computed client configuration.
-	Config     client.Configuration
-	configFile string
-	verbose    bool
-	serverAddr string
+	Config                = &client.Configuration{}
+	configFile            string
+	verbose               bool
+	serverAddr            string
+	listVersion           = true
+	displayConfigFilePath = false
 
 	// RootCmd is the base command for the CLI.
 	RootCmd = &cobra.Command{
 		Use:   `amp [OPTIONS] COMMAND [arg...]`,
 		Short: "Appcelerator Microservice Platform.",
+		Run: func(cmd *cobra.Command, args []string) {
+			if displayConfigFilePath {
+				configFilePath := viper.ConfigFileUsed()
+				if configFilePath == "" {
+					fmt.Println("No configuration file used (using default configuration)")
+				} else {
+					fmt.Println(configFilePath)
+				}
+				cli.Exit(0)
+			}
+			if listVersion {
+				fmt.Printf("amp (cli version: %s, build: %s)\n", Version, Build)
+				cli.Exit(0)
+			}
+			fmt.Println(cmd.UsageString())
+		},
 	}
 )
 
 // All main does is process commands and flags and invoke the app
 func main() {
 	cobra.OnInitialize(func() {
-		InitConfig(configFile, &Config, verbose, serverAddr)
+		cli.InitConfig(configFile, Config, verbose, serverAddr)
 		if addr := RootCmd.Flag("server").Value.String(); addr != "" {
 			Config.ServerAddress = addr
 		}
 		if Config.ServerAddress == "" {
 			Config.ServerAddress = client.DefaultServerAddress
 		}
-		AMP = client.NewAMP(&Config)
-		AMP.Connect()
+		if Config.AdminServerAddress == "" {
+			Config.AdminServerAddress = client.DefaultAdminServerAddress
+		}
+		AMP = client.NewAMP(Config, cli.NewLogger(Config.Verbose))
+		if !Config.Verbose {
+			RootCmd.SilenceErrors = true
+			RootCmd.SilenceUsage = true
+		}
 		cli.AtExit(func() {
 			if AMP != nil {
 				AMP.Disconnect()
@@ -50,15 +80,6 @@ func main() {
 		})
 	})
 
-	// configCmd represents the Config command
-	configCmd := &cobra.Command{
-		Use:   "config",
-		Short: "Display the current configuration",
-		Long:  `Display the current configuration.`,
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println(Config)
-		},
-	}
 	// infoCmd represents the amp information
 	infoCmd := &cobra.Command{
 		Use:   "info",
@@ -69,17 +90,26 @@ func main() {
 			fmt.Printf("Server: %s\n", Config.ServerAddress)
 		},
 	}
+	RootCmd.AddCommand(infoCmd)
+
 	RootCmd.SetUsageTemplate(usageTemplate)
 	RootCmd.SetHelpTemplate(helpTemplate)
 
-	RootCmd.PersistentFlags().StringVar(&configFile, "config", "", "Config file (default is $HOME/.amp.yaml)")
-	RootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, `Verbose output`)
+	RootCmd.PersistentFlags().StringVar(&configFile, "use-config", "", "Specify config file (overrides default at $HOME/.config/amp/amp.yaml)")
+	RootCmd.PersistentFlags().BoolVar(&displayConfigFilePath, "config-used", false, "Display config file used (if any)")
+	RootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 	RootCmd.PersistentFlags().StringVar(&serverAddr, "server", "", "Server address")
-	RootCmd.AddCommand(configCmd)
-	RootCmd.AddCommand(infoCmd)
-	if err := RootCmd.Execute(); err != nil {
+	RootCmd.PersistentFlags().BoolVarP(&listVersion, "version", "V", false, "Version number")
+	RootCmd.PersistentFlags().BoolP("help", "h", false, "Display help")
+
+	cmd, _, err := RootCmd.Find(os.Args[1:])
+	if err != nil {
 		fmt.Println(err)
-		cli.Exit(-1)
+		cli.Exit(1)
+	}
+	if err := cmd.Execute(); err != nil {
+		fmt.Println(err)
+		cli.Exit(1)
 	}
 	cli.Exit(0)
 }

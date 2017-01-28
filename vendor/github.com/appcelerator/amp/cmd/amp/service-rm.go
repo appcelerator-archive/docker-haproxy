@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/appcelerator/amp/api/client"
@@ -15,12 +16,9 @@ var (
 	serviceRmCmd = &cobra.Command{
 		Use:   "rm [OPTIONS] SERVICE [SERVICE...]",
 		Short: "Remove one or more services",
-		Long:  `Remove one or more services`,
-		Run: func(cmd *cobra.Command, args []string) {
-			err := rm(AMP, cmd, args)
-			if err != nil {
-				fmt.Println(err)
-			}
+		Long:  `Remove one or more services.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return serviceRm(AMP, cmd, args)
 		},
 	}
 
@@ -32,10 +30,10 @@ func init() {
 	ServiceCmd.AddCommand(serviceRmCmd)
 }
 
-func rm(amp *client.AMP, cmd *cobra.Command, args []string) error {
+func serviceRm(amp *client.AMP, cmd *cobra.Command, args []string) error {
 	if len(args) < 1 {
 		// TODO use standard errors and print usage
-		return fmt.Errorf("\"amp service rm\" requires at least 1 argument(s)")
+		log.Fatal("\"amp service rm\" requires at least 1 argument(s)")
 	}
 
 	client := service.NewServiceClient(amp.Conn)

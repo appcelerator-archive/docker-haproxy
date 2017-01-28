@@ -1,8 +1,8 @@
 package main
 
 import (
-	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -23,11 +23,12 @@ var statsCmd = &cobra.Command{
 	Use:   "stats [service name or id] or --flags...",
 	Short: "Display resource usage statistics",
 	Long:  `Get statistics on containers, services, nodes about cpu, memory, io, net.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		err := Stats(AMP, cmd, args)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		err := AMP.Connect()
 		if err != nil {
-			fmt.Println(err)
+			return err
 		}
+		return Stats(AMP, cmd, args)
 	},
 }
 
@@ -119,6 +120,7 @@ func Stats(amp *client.AMP, cmd *cobra.Command, args []string) error {
 	query.FilterContainerName = backQuoteDash(cmd.Flag("container-name").Value.String())
 	query.FilterContainerImage = backQuoteDash(cmd.Flag("image").Value.String())
 	query.FilterServiceId = cmd.Flag("service-id").Value.String()
+	query.FilterServiceName = cmd.Flag("service-name").Value.String()
 	query.FilterTaskId = cmd.Flag("task-id").Value.String()
 	query.FilterTaskName = backQuoteDash(cmd.Flag("task-name").Value.String())
 	query.FilterNodeId = cmd.Flag("node-id").Value.String()
@@ -152,7 +154,7 @@ func backQuoteDash(val string) string {
 
 func validateQuery(query *stats.StatsRequest) error {
 	if query.Period != "" && (query.Since != "" || query.Until != "") {
-		return errors.New("--period can't be used with --since or --until")
+		log.Fatal("--period can't be used with --since or --until")
 	}
 	return nil
 }

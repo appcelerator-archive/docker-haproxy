@@ -1,3 +1,48 @@
+/*
+Package client is a Go client for the Docker Engine API.
+
+The "docker" command uses this package to communicate with the daemon. It can also
+be used by your own Go applications to do anything the command-line interface does
+– running containers, pulling images, managing swarms, etc.
+
+For more information about the Engine API, see the documentation:
+https://docs.docker.com/engine/reference/api/
+
+Usage
+
+You use the library by creating a client object and calling methods on it. The
+client can be created either from environment variables with NewEnvClient, or
+configured manually with NewClient.
+
+For example, to list running containers (the equivalent of "docker ps"):
+
+	package main
+
+	import (
+		"context"
+		"fmt"
+
+		"github.com/docker/docker/api/types"
+		"github.com/docker/docker/client"
+	)
+
+	func main() {
+		cli, err := client.NewEnvClient()
+		if err != nil {
+			panic(err)
+		}
+
+		containers, err := cli.ContainerList(context.Background(), types.ContainerListOptions{})
+		if err != nil {
+			panic(err)
+		}
+
+		for _, container := range containers {
+			fmt.Printf("%s %s\n", container.ID[:10], container.Image)
+		}
+	}
+
+*/
 package client
 
 import (
@@ -8,16 +53,18 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/docker/docker/client/transport"
+	"github.com/docker/go-connections/sockets"
 	"github.com/docker/go-connections/tlsconfig"
 )
 
 // DefaultVersion is the version of the current stable API
-const DefaultVersion string = "1.23"
+const DefaultVersion string = "1.25"
 
 // Client is the API client that performs all operations
 // against a docker server.
 type Client struct {
+	// scheme sets the scheme for the client
+	scheme string
 	// host holds the server address to connect to
 	host string
 	// proto holds the client protocol i.e. unix.
@@ -26,12 +73,14 @@ type Client struct {
 	addr string
 	// basePath holds the path to prepend to the requests.
 	basePath string
-	// transport is the interface to send request with, it implements transport.Client.
-	transport transport.Client
+	// client used to send and receive http requests.
+	client *http.Client
 	// version of the server to talk to.
 	version string
 	// custom http headers configured by users.
 	customHTTPHeaders map[string]string
+	// manualOverride is set to true when the version was set by users.
+	manualOverride bool
 }
 
 // NewEnvClient initializes a new API client based on environment variables.
@@ -64,13 +113,19 @@ func NewEnvClient() (*Client, error) {
 	if host == "" {
 		host = DefaultDockerHost
 	}
-
 	version := os.Getenv("DOCKER_API_VERSION")
 	if version == "" {
 		version = DefaultVersion
 	}
 
-	return NewClient(host, version, client, nil)
+	cli, err := NewClient(host, version, client, nil)
+	if err != nil {
+		return cli, err
+	}
+	if os.Getenv("DOCKER_API_VERSION") != "" {
+		cli.manualOverride = true
+	}
+	return cli, nil
 }
 
 // NewClient initializes a new API client for the given host and API version.
@@ -86,20 +141,52 @@ func NewClient(host string, version string, client *http.Client, httpHeaders map
 		return nil, err
 	}
 
-	transport, err := transport.NewTransportWithHTTP(proto, addr, client)
-	if err != nil {
-		return nil, err
+	if client != nil {
+		if _, ok := client.Transport.(*http.Transport); !ok {
+			return nil, fmt.Errorf("unable to verify TLS configuration, invalid transport %v", client.Transport)
+		}
+	} else {
+		transport := new(http.Transport)
+		sockets.ConfigureTransport(transport, proto, addr)
+		client = &http.Client{
+			Transport: transport,
+		}
+	}
+
+	scheme := "http"
+	tlsConfig := resolveTLSConfig(client.Transport)
+	if tlsConfig != nil {
+		// TODO(stevvooe): This isn't really the right way to write clients in Go.
+		// `NewClient` should probably only take an `*http.Client` and work from there.
+		// Unfortunately, the model of having a host-ish/url-thingy as the connection
+		// string has us confusing protocol and transport layers. We continue doing
+		// this to avoid breaking existing clients but this should be addressed.
+		scheme = "https"
 	}
 
 	return &Client{
+		scheme:            scheme,
 		host:              host,
 		proto:             proto,
 		addr:              addr,
 		basePath:          basePath,
-		transport:         transport,
+		client:            client,
 		version:           version,
 		customHTTPHeaders: httpHeaders,
 	}, nil
+}
+
+// Close ensures that transport.Client is closed
+// especially needed while using NewClient with *http.Client = nil
+// for example
+// client.NewClient("unix:///var/run/docker.sock", nil, "v1.18", map[string]string{"User-Agent": "engine-api-cli-1.0"})
+func (cli *Client) Close() error {
+
+	if t, ok := cli.client.Transport.(*http.Transport); ok {
+		t.CloseIdleConnections()
+	}
+
+	return nil
 }
 
 // getAPIPath returns the versioned request path to call the api.
@@ -132,7 +219,10 @@ func (cli *Client) ClientVersion() string {
 // UpdateClientVersion updates the version string associated with this
 // instance of the Client.
 func (cli *Client) UpdateClientVersion(v string) {
-	cli.version = v
+	if !cli.manualOverride {
+		cli.version = v
+	}
+
 }
 
 // ParseHost verifies that the given host strings is valid.

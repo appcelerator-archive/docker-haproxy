@@ -862,17 +862,20 @@ func TestSnapshot(t *testing.T) {
 
 	go func() {
 		gaction, _ := p.Wait(1)
+		defer func() { ch <- struct{}{} }()
+
 		if len(gaction) != 1 {
 			t.Fatalf("len(action) = %d, want 1", len(gaction))
 		}
 		if !reflect.DeepEqual(gaction[0], testutil.Action{Name: "SaveSnap"}) {
 			t.Errorf("action = %s, want SaveSnap", gaction[0])
 		}
-		ch <- struct{}{}
 	}()
 
 	go func() {
 		gaction, _ := st.Wait(2)
+		defer func() { ch <- struct{}{} }()
+
 		if len(gaction) != 2 {
 			t.Fatalf("len(action) = %d, want 2", len(gaction))
 		}
@@ -882,7 +885,6 @@ func TestSnapshot(t *testing.T) {
 		if !reflect.DeepEqual(gaction[1], testutil.Action{Name: "SaveNoCopy"}) {
 			t.Errorf("action = %s, want SaveNoCopy", gaction[1])
 		}
-		ch <- struct{}{}
 	}()
 
 	srv.snapshot(1, raftpb.ConfState{Nodes: []uint64{1}})
@@ -939,8 +941,8 @@ func TestTriggerSnap(t *testing.T) {
 		srv.Do(context.Background(), pb.Request{Method: "PUT"})
 	}
 
-	srv.Stop()
 	<-donec
+	srv.Stop()
 }
 
 // TestConcurrentApplyAndSnapshotV3 will send out snapshots concurrently with
@@ -971,14 +973,15 @@ func TestConcurrentApplyAndSnapshotV3(t *testing.T) {
 			DataDir: testdir,
 		},
 		r: raftNode{
+			isIDRemoved: func(id uint64) bool { return cl.IsIDRemoved(types.ID(id)) },
 			Node:        n,
 			transport:   tr,
 			storage:     mockstorage.NewStorageRecorder(testdir),
 			raftStorage: rs,
+			msgSnapC:    make(chan raftpb.Message, maxInFlightMsgSnap),
 		},
-		store:    st,
-		cluster:  cl,
-		msgSnapC: make(chan raftpb.Message, maxInFlightMsgSnap),
+		store:   st,
+		cluster: cl,
 	}
 	s.applyV2 = &applierV2store{store: s.store, cluster: s.cluster}
 
@@ -1227,7 +1230,7 @@ func TestPublishStopped(t *testing.T) {
 
 // TestPublishRetry tests that publish will keep retry until success.
 func TestPublishRetry(t *testing.T) {
-	n := newNodeRecorder()
+	n := newNodeRecorderStream()
 	srv := &EtcdServer{
 		Cfg:      &ServerConfig{TickMs: 1},
 		r:        raftNode{Node: n},
@@ -1235,15 +1238,27 @@ func TestPublishRetry(t *testing.T) {
 		stopping: make(chan struct{}),
 		reqIDGen: idutil.NewGenerator(0, time.Time{}),
 	}
-	// TODO: use fakeClockwork
-	time.AfterFunc(10*time.Millisecond, func() { close(srv.stopping) })
+	// expect multiple proposals from retrying
+	ch := make(chan struct{})
+	go func() {
+		defer close(ch)
+		if action, err := n.Wait(2); err != nil {
+			t.Errorf("len(action) = %d, want >= 2 (%v)", len(action), err)
+		}
+		close(srv.stopping)
+		// drain remaining actions, if any, so publish can terminate
+		for {
+			select {
+			case <-ch:
+				return
+			default:
+				n.Action()
+			}
+		}
+	}()
 	srv.publish(10 * time.Nanosecond)
-
-	action := n.Action()
-	// multiple Proposes
-	if cnt := len(action); cnt < 2 {
-		t.Errorf("len(action) = %d, want >= 2", cnt)
-	}
+	ch <- struct{}{}
+	<-ch
 }
 
 func TestUpdateVersion(t *testing.T) {
@@ -1350,8 +1365,9 @@ func TestGetOtherPeerURLs(t *testing.T) {
 
 type nodeRecorder struct{ testutil.Recorder }
 
-func newNodeRecorder() *nodeRecorder { return &nodeRecorder{&testutil.RecorderBuffered{}} }
-func newNodeNop() raft.Node          { return newNodeRecorder() }
+func newNodeRecorder() *nodeRecorder       { return &nodeRecorder{&testutil.RecorderBuffered{}} }
+func newNodeRecorderStream() *nodeRecorder { return &nodeRecorder{testutil.NewRecorderStream()} }
+func newNodeNop() raft.Node                { return newNodeRecorder() }
 
 func (n *nodeRecorder) Tick() { n.Record(testutil.Action{Name: "Tick"}) }
 func (n *nodeRecorder) Campaign(ctx context.Context) error {

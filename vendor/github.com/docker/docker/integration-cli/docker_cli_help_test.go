@@ -10,7 +10,6 @@ import (
 	"github.com/docker/docker/pkg/homedir"
 	"github.com/docker/docker/pkg/integration/checker"
 	icmd "github.com/docker/docker/pkg/integration/cmd"
-	"github.com/docker/docker/utils"
 	"github.com/go-check/check"
 )
 
@@ -86,14 +85,8 @@ func (s *DockerSuite) TestHelpTextVerify(c *check.C) {
 		cmds := []string{}
 		// Grab all chars starting at "Commands:"
 		helpOut := strings.Split(out[i:], "\n")
-		// First line is just "Commands:"
-		if isLocalDaemon {
-			// Replace first line with "daemon" command since it's not part of the list of commands.
-			helpOut[0] = " daemon"
-		} else {
-			// Skip first line
-			helpOut = helpOut[1:]
-		}
+		// Skip first line, it is just "Commands:"
+		helpOut = helpOut[1:]
 
 		// Create the list of commands we want to test
 		cmdsToTest := []string{}
@@ -123,7 +116,7 @@ func (s *DockerSuite) TestHelpTextVerify(c *check.C) {
 		cmdsToTest = append(cmdsToTest, "network ls")
 		cmdsToTest = append(cmdsToTest, "network rm")
 
-		if utils.ExperimentalBuild() {
+		if experimentalDaemon {
 			cmdsToTest = append(cmdsToTest, "checkpoint create")
 			cmdsToTest = append(cmdsToTest, "checkpoint ls")
 			cmdsToTest = append(cmdsToTest, "checkpoint rm")
@@ -203,7 +196,7 @@ func (s *DockerSuite) TestHelpExitCodesHelpOutput(c *check.C) {
 	stdout, stderr, _, err = runCommandWithStdoutStderr(cmd)
 	c.Assert(err, checker.NotNil)
 	c.Assert(stdout, checker.Equals, "")
-	c.Assert(stderr, checker.Equals, "docker: 'BadCmd' is not a docker command.\nSee 'docker --help'.\n", check.Commentf("Unexcepted output for 'docker badCmd'\n"))
+	c.Assert(stderr, checker.Equals, "docker: 'BadCmd' is not a docker command.\nSee 'docker --help'\n", check.Commentf("Unexcepted output for 'docker badCmd'\n"))
 }
 
 func testCommand(cmd string, newEnvs []string, scanForHome bool, home string) error {

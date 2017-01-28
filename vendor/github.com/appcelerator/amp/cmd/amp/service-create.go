@@ -2,24 +2,25 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"strings"
 
 	"github.com/appcelerator/amp/api/client"
 	"github.com/appcelerator/amp/api/rpc/service"
+	"github.com/docker/docker/cli/command"
+	cliflags "github.com/docker/docker/cli/flags"
 	"github.com/spf13/cobra"
 	"golang.org/x/net/context"
 )
 
 var (
-	createCmd = &cobra.Command{
+	serviceCreateCmd = &cobra.Command{
 		Use:   "create [OPTIONS] IMAGE [CMD] [ARG...]",
 		Short: "Create a new service",
-		Long:  `Create a new service`,
-		Run: func(cmd *cobra.Command, args []string) {
-			err := create(AMP, cmd, args)
-			if err != nil {
-				fmt.Println(err)
-			}
+		Long:  `Create a new service.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return serviceCreate(AMP, cmd, args)
 		},
 	}
 
@@ -49,10 +50,13 @@ var (
 
 	// network
 	networks = []string{}
+
+	// send registry auth
+	registryAuth = false
 )
 
 func init() {
-	flags := createCmd.Flags()
+	flags := serviceCreateCmd.Flags()
 	flags.StringVar(&name, "name", name, "Service name")
 	flags.StringSliceVarP(&publishSpecs, "publish", "p", publishSpecs, "Publish a service externally. Format: [published-name|published-port:]internal-service-port[/protocol], ex: '80:3000/tcp' or 'admin:3000'")
 	flags.StringVar(&mode, "mode", mode, "Service mode (replicated or global)")
@@ -61,14 +65,15 @@ func init() {
 	flags.StringSliceVarP(&serviceLabels, "label", "l", serviceLabels, "Set service labels (default [])")
 	flags.StringSliceVar(&containerLabels, "container-label", containerLabels, "Set container labels for service replicas (default [])")
 	flags.StringSliceVar(&networks, "network", networks, "Set service networks attachment (default [])")
+	flags.BoolVar(&registryAuth, "with-registry-auth", false, "Send registry authentication details to Swarm agents")
 
-	ServiceCmd.AddCommand(createCmd)
+	ServiceCmd.AddCommand(serviceCreateCmd)
 }
 
-func create(amp *client.AMP, cmd *cobra.Command, args []string) error {
+func serviceCreate(amp *client.AMP, cmd *cobra.Command, args []string) error {
 	if len(args) < 1 {
 		// TODO use standard errors and print usage
-		return fmt.Errorf("\"amp service create\" requires at least 1 argument(s)")
+		log.Fatal("\"amp service create\" requires at least 1 argument(s)")
 	}
 
 	image = args[0]
@@ -97,13 +102,13 @@ func create(amp *client.AMP, cmd *cobra.Command, args []string) error {
 	case "global":
 		if replicas != 0 {
 			// global mode can't specify replicas (only allowed 1 per node)
-			return fmt.Errorf("replicas can only be used with replicated mode")
+			log.Fatal("Replicas can only be used with replicated mode")
 		}
 		swarmMode = &service.ServiceSpec_Global{
 			Global: &service.GlobalService{},
 		}
 	default:
-		return fmt.Errorf("invalid option for mode: %s", mode)
+		log.Fatalf("Invalid option for mode: %s", mode)
 	}
 
 	spec := &service.ServiceSpec{
@@ -121,13 +126,31 @@ func create(amp *client.AMP, cmd *cobra.Command, args []string) error {
 		ServiceSpec: spec,
 	}
 
+	ctx := context.Background()
+
+	// only send auth if flag was set
+	if registryAuth {
+		dockerCli := command.NewDockerCli(os.Stdin, os.Stdout, os.Stderr)
+		opts := cliflags.NewClientOptions()
+		err := dockerCli.Initialize(opts)
+		if err != nil {
+			return err
+		}
+		// Retrieve encoded auth token from the image reference
+		encodedAuth, err := command.RetrieveAuthTokenFromImage(ctx, dockerCli, image)
+		if err != nil {
+			return err
+		}
+		spec.RegistryAuth = encodedAuth
+	}
+
 	client := service.NewServiceClient(amp.Conn)
-	reply, err := client.Create(context.Background(), request)
+	reply, err := client.Create(ctx, request)
 	if err != nil {
 		return err
 	}
 
-	fmt.Println(reply)
+	fmt.Println(reply.Id)
 	return nil
 }
 

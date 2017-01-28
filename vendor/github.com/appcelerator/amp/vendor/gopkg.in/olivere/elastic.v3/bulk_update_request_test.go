@@ -1,4 +1,4 @@
-// Copyright 2012-2016 Oliver Eilhard. All rights reserved.
+// Copyright 2012-present Oliver Eilhard. All rights reserved.
 // Use of this source code is governed by a MIT-license.
 // See http://olivere.mit-license.org/license.txt for details.
 
@@ -53,6 +53,18 @@ func TestBulkUpdateRequestSerialization(t *testing.T) {
 			Expected: []string{
 				`{"update":{"_id":"1","_index":"index1","_retry_on_conflict":3,"_type":"tweet"}}`,
 				`{"script":{"inline":"ctx._source.retweets += param1","lang":"javascript","params":{"param1":42}},"upsert":{"counter":42}}`,
+			},
+		},
+		// #3
+		{
+			Request: NewBulkUpdateRequest().Index("index1").Type("tweet").Id("1").DetectNoop(true).Doc(struct {
+				Counter int64 `json:"counter"`
+			}{
+				Counter: 42,
+			}),
+			Expected: []string{
+				`{"update":{"_id":"1","_index":"index1","_type":"tweet"}}`,
+				`{"detect_noop":true,"doc":{"counter":42}}`,
 			},
 		},
 	}

@@ -1,7 +1,6 @@
 package container
 
 import (
-	"fmt"
 	"strconv"
 
 	"golang.org/x/net/context"
@@ -10,26 +9,32 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/versions"
 	"github.com/docker/docker/cli/command"
-	"github.com/docker/docker/cli/command/system"
 	clientapi "github.com/docker/docker/client"
 )
 
-func waitExitOrRemoved(dockerCli *command.DockerCli, ctx context.Context, containerID string, waitRemove bool) (chan int, error) {
+func waitExitOrRemoved(ctx context.Context, dockerCli *command.DockerCli, containerID string, waitRemove bool) chan int {
 	if len(containerID) == 0 {
 		// containerID can never be empty
 		panic("Internal Error: waitExitOrRemoved needs a containerID as parameter")
 	}
 
+	var removeErr error
 	statusChan := make(chan int)
 	exitCode := 125
 
-	eventProcessor := func(e events.Message, err error) error {
-		if err != nil {
-			statusChan <- exitCode
-			return fmt.Errorf("failed to decode event: %v", err)
-		}
+	// Get events via Events API
+	f := filters.NewArgs()
+	f.Add("type", "container")
+	f.Add("container", containerID)
+	options := types.EventsOptions{
+		Filters: f,
+	}
+	eventCtx, cancel := context.WithCancel(ctx)
+	eventq, errq := dockerCli.Client().Events(eventCtx, options)
 
+	eventProcessor := func(e events.Message) bool {
 		stopProcessing := false
 		switch e.Status {
 		case "die":
@@ -43,6 +48,18 @@ func waitExitOrRemoved(dockerCli *command.DockerCli, ctx context.Context, contai
 			}
 			if !waitRemove {
 				stopProcessing = true
+			} else {
+				// If we are talking to an older daemon, `AutoRemove` is not supported.
+				// We need to fall back to the old behavior, which is client-side removal
+				if versions.LessThan(dockerCli.Client().ClientVersion(), "1.25") {
+					go func() {
+						removeErr = dockerCli.Client().ContainerRemove(ctx, containerID, types.ContainerRemoveOptions{RemoveVolumes: true})
+						if removeErr != nil {
+							logrus.Errorf("error removing container: %v", removeErr)
+							cancel() // cancel the event Q
+						}
+					}()
+				}
 			}
 		case "detach":
 			exitCode = 0
@@ -50,40 +67,42 @@ func waitExitOrRemoved(dockerCli *command.DockerCli, ctx context.Context, contai
 		case "destroy":
 			stopProcessing = true
 		}
+		return stopProcessing
+	}
 
-		if stopProcessing {
-			statusChan <- exitCode
-			// stop the loop processing
-			return fmt.Errorf("done")
+	go func() {
+		defer func() {
+			statusChan <- exitCode // must always send an exit code or the caller will block
+			cancel()
+		}()
+
+		for {
+			select {
+			case <-eventCtx.Done():
+				if removeErr != nil {
+					return
+				}
+			case evt := <-eventq:
+				if eventProcessor(evt) {
+					return
+				}
+			case err := <-errq:
+				logrus.Errorf("error getting events from daemon: %v", err)
+				return
+			}
 		}
+	}()
 
-		return nil
-	}
-
-	// Get events via Events API
-	f := filters.NewArgs()
-	f.Add("type", "container")
-	f.Add("container", containerID)
-	options := types.EventsOptions{
-		Filters: f,
-	}
-	resBody, err := dockerCli.Client().Events(ctx, options)
-	if err != nil {
-		return nil, fmt.Errorf("can't get events from daemon: %v", err)
-	}
-
-	go system.DecodeEvents(resBody, eventProcessor)
-
-	return statusChan, nil
+	return statusChan
 }
 
 // getExitCode performs an inspect on the container. It returns
 // the running state and the exit code.
-func getExitCode(dockerCli *command.DockerCli, ctx context.Context, containerID string) (bool, int, error) {
+func getExitCode(ctx context.Context, dockerCli *command.DockerCli, containerID string) (bool, int, error) {
 	c, err := dockerCli.Client().ContainerInspect(ctx, containerID)
 	if err != nil {
 		// If we can't connect, then the daemon probably died.
-		if err != clientapi.ErrConnectionFailed {
+		if !clientapi.IsErrConnectionFailed(err) {
 			return false, -1, err
 		}
 		return false, -1, nil
@@ -91,8 +110,8 @@ func getExitCode(dockerCli *command.DockerCli, ctx context.Context, containerID 
 	return c.State.Running, c.State.ExitCode, nil
 }
 
-func parallelOperation(ctx context.Context, cids []string, op func(ctx context.Context, id string) error) chan error {
-	if len(cids) == 0 {
+func parallelOperation(ctx context.Context, containers []string, op func(ctx context.Context, container string) error) chan error {
+	if len(containers) == 0 {
 		return nil
 	}
 	const defaultParallel int = 50
@@ -101,18 +120,18 @@ func parallelOperation(ctx context.Context, cids []string, op func(ctx context.C
 
 	// make sure result is printed in correct order
 	output := map[string]chan error{}
-	for _, c := range cids {
+	for _, c := range containers {
 		output[c] = make(chan error, 1)
 	}
 	go func() {
-		for _, c := range cids {
+		for _, c := range containers {
 			err := <-output[c]
 			errChan <- err
 		}
 	}()
 
 	go func() {
-		for _, c := range cids {
+		for _, c := range containers {
 			sem <- struct{}{} // Wait for active queue sem to drain.
 			go func(container string) {
 				output[container] <- op(ctx, container)

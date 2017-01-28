@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"os"
 	"time"
 )
 
@@ -13,9 +12,10 @@ func Run(version string, build string) {
 	ampHAProxyControllerVersion = version
 	conf.load(version, build)
 	err := etcdClient.init()
-	if err != nil {
-		fmt.Printf("ETCD connection error %v\n", err)
-		os.Exit(1)
+	for err != nil {
+		fmt.Printf("Waiting for ETCD connection\n")
+		time.Sleep(5 * time.Second)
+		err = etcdClient.init()
 	}
 	haproxy.init()
 	haproxy.trapSignal()

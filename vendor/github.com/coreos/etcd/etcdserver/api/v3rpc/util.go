@@ -35,6 +35,8 @@ func togRPCError(err error) error {
 		return rpctypes.ErrGRPCMemberExist
 	case membership.ErrPeerURLexists:
 		return rpctypes.ErrGRPCPeerURLExist
+	case etcdserver.ErrNotEnoughStartedMembers:
+		return rpctypes.ErrMemberNotEnoughStarted
 
 	case mvcc.ErrCompacted:
 		return rpctypes.ErrGRPCCompacted
@@ -57,8 +59,15 @@ func togRPCError(err error) error {
 		return rpctypes.ErrGRPCTimeout
 	case etcdserver.ErrTimeoutDueToLeaderFail:
 		return rpctypes.ErrGRPCTimeoutDueToLeaderFail
+	case etcdserver.ErrTimeoutDueToConnectionLost:
+		return rpctypes.ErrGRPCTimeoutDueToConnectionLost
 	case etcdserver.ErrUnhealthy:
 		return rpctypes.ErrGRPCUnhealthy
+
+	case lease.ErrLeaseNotFound:
+		return rpctypes.ErrGRPCLeaseNotFound
+	case lease.ErrLeaseExists:
+		return rpctypes.ErrGRPCLeaseExist
 
 	case auth.ErrRootUserNotExist:
 		return rpctypes.ErrGRPCRootUserNotExist
@@ -66,6 +75,8 @@ func togRPCError(err error) error {
 		return rpctypes.ErrGRPCRootRoleNotExist
 	case auth.ErrUserAlreadyExist:
 		return rpctypes.ErrGRPCUserAlreadyExist
+	case auth.ErrUserEmpty:
+		return rpctypes.ErrGRPCUserEmpty
 	case auth.ErrUserNotFound:
 		return rpctypes.ErrGRPCUserNotFound
 	case auth.ErrRoleAlreadyExist:
@@ -82,6 +93,8 @@ func togRPCError(err error) error {
 		return rpctypes.ErrGRPCPermissionNotGranted
 	case auth.ErrAuthNotEnabled:
 		return rpctypes.ErrGRPCAuthNotEnabled
+	case etcdserver.ErrInvalidAuthToken:
+		return rpctypes.ErrGRPCInvalidAuthToken
 	default:
 		return grpc.Errorf(codes.Unknown, err.Error())
 	}

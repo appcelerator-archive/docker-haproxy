@@ -6,13 +6,11 @@ services:
 language: go
 
 go:
-  - 1.7.3
+  - 1.7.4
 
 install:
   - go get -u github.com/golang/lint/golint
   - go get -u github.com/Masterminds/glide
-  - make install-deps
-  - rm -rf vendor/github.com/appcelerator/amp/vendor
 
 script:
   - docker run -t --volume=$GOPATH/src/github.com/appcelerator/docker-haproxy:/go/src/github.com/appcelerator/docker-haproxy appcelerator/docker-alpine-builder docker-haproxy

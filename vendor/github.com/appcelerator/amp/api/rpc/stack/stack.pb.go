@@ -9,16 +9,21 @@ It is generated from these files:
 	github.com/appcelerator/amp/api/rpc/stack/stack.proto
 
 It has these top-level messages:
-	UpRequest
-	UpReply
+	StackFileRequest
 	StackRequest
 	RemoveRequest
 	StackReply
 	ListRequest
 	ListReply
+	TasksRequest
+	TasksReply
 	StackInfo
 	StackID
+	CustomNetwork
 	IdList
+	NetworkSpec
+	NetworkIPAM
+	NetworkIPAMConfig
 	Stack
 */
 package stack
@@ -26,6 +31,7 @@ package stack
 import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
 import math "math"
+import _ "github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis/google/api"
 import service "github.com/appcelerator/amp/api/rpc/service"
 
 import (
@@ -71,28 +77,24 @@ func (x StackState) String() string {
 }
 func (StackState) EnumDescriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
 
-// struct for up request function
-type UpRequest struct {
-	StackName string `protobuf:"bytes,1,opt,name=stack_name,json=stackName" json:"stack_name,omitempty"`
-	Stackfile string `protobuf:"bytes,2,opt,name=stackfile" json:"stackfile,omitempty"`
+// struct for stackfile request
+type StackFileRequest struct {
+	Stack *Stack `protobuf:"bytes,1,opt,name=stack" json:"stack,omitempty"`
 }
 
-func (m *UpRequest) Reset()                    { *m = UpRequest{} }
-func (m *UpRequest) String() string            { return proto.CompactTextString(m) }
-func (*UpRequest) ProtoMessage()               {}
-func (*UpRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
+func (m *StackFileRequest) Reset()                    { *m = StackFileRequest{} }
+func (m *StackFileRequest) String() string            { return proto.CompactTextString(m) }
+func (*StackFileRequest) ProtoMessage()               {}
+func (*StackFileRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
 
-// struct for up reply function
-type UpReply struct {
-	StackId string `protobuf:"bytes,1,opt,name=stack_id,json=stackId" json:"stack_id,omitempty"`
+func (m *StackFileRequest) GetStack() *Stack {
+	if m != nil {
+		return m.Stack
+	}
+	return nil
 }
 
-func (m *UpReply) Reset()                    { *m = UpReply{} }
-func (m *UpReply) String() string            { return proto.CompactTextString(m) }
-func (*UpReply) ProtoMessage()               {}
-func (*UpReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
-
-// struct for start and stop request functions
+// struct stack name/id based requests
 type StackRequest struct {
 	StackIdent string `protobuf:"bytes,1,opt,name=stack_ident,json=stackIdent" json:"stack_ident,omitempty"`
 }
@@ -100,7 +102,14 @@ type StackRequest struct {
 func (m *StackRequest) Reset()                    { *m = StackRequest{} }
 func (m *StackRequest) String() string            { return proto.CompactTextString(m) }
 func (*StackRequest) ProtoMessage()               {}
-func (*StackRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
+func (*StackRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
+
+func (m *StackRequest) GetStackIdent() string {
+	if m != nil {
+		return m.StackIdent
+	}
+	return ""
+}
 
 // struct for remove request function
 type RemoveRequest struct {
@@ -111,9 +120,23 @@ type RemoveRequest struct {
 func (m *RemoveRequest) Reset()                    { *m = RemoveRequest{} }
 func (m *RemoveRequest) String() string            { return proto.CompactTextString(m) }
 func (*RemoveRequest) ProtoMessage()               {}
-func (*RemoveRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{3} }
+func (*RemoveRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
 
-// struct for start, stop and remove reply functions
+func (m *RemoveRequest) GetStackIdent() string {
+	if m != nil {
+		return m.StackIdent
+	}
+	return ""
+}
+
+func (m *RemoveRequest) GetForce() bool {
+	if m != nil {
+		return m.Force
+	}
+	return false
+}
+
+// struct for stack id responses
 type StackReply struct {
 	StackId string `protobuf:"bytes,1,opt,name=stack_id,json=stackId" json:"stack_id,omitempty"`
 }
@@ -121,16 +144,39 @@ type StackReply struct {
 func (m *StackReply) Reset()                    { *m = StackReply{} }
 func (m *StackReply) String() string            { return proto.CompactTextString(m) }
 func (*StackReply) ProtoMessage()               {}
-func (*StackReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{4} }
+func (*StackReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{3} }
+
+func (m *StackReply) GetStackId() string {
+	if m != nil {
+		return m.StackId
+	}
+	return ""
+}
 
 // struct for list request function
 type ListRequest struct {
+	All   bool  `protobuf:"varint,1,opt,name=all" json:"all,omitempty"`
+	Limit int64 `protobuf:"varint,2,opt,name=limit" json:"limit,omitempty"`
 }
 
 func (m *ListRequest) Reset()                    { *m = ListRequest{} }
 func (m *ListRequest) String() string            { return proto.CompactTextString(m) }
 func (*ListRequest) ProtoMessage()               {}
-func (*ListRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{5} }
+func (*ListRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{4} }
+
+func (m *ListRequest) GetAll() bool {
+	if m != nil {
+		return m.All
+	}
+	return false
+}
+
+func (m *ListRequest) GetLimit() int64 {
+	if m != nil {
+		return m.Limit
+	}
+	return 0
+}
 
 // struct for list reply function
 type ListReply struct {
@@ -140,13 +186,47 @@ type ListReply struct {
 func (m *ListReply) Reset()                    { *m = ListReply{} }
 func (m *ListReply) String() string            { return proto.CompactTextString(m) }
 func (*ListReply) ProtoMessage()               {}
-func (*ListReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{6} }
+func (*ListReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{5} }
 
 func (m *ListReply) GetList() []*StackInfo {
 	if m != nil {
 		return m.List
 	}
 	return nil
+}
+
+// struct for tasks request function
+type TasksRequest struct {
+	StackIdent string `protobuf:"bytes,1,opt,name=stack_ident,json=stackIdent" json:"stack_ident,omitempty"`
+}
+
+func (m *TasksRequest) Reset()                    { *m = TasksRequest{} }
+func (m *TasksRequest) String() string            { return proto.CompactTextString(m) }
+func (*TasksRequest) ProtoMessage()               {}
+func (*TasksRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{6} }
+
+func (m *TasksRequest) GetStackIdent() string {
+	if m != nil {
+		return m.StackIdent
+	}
+	return ""
+}
+
+// struct for tasks reply function
+type TasksReply struct {
+	Message string `protobuf:"bytes,1,opt,name=message" json:"message,omitempty"`
+}
+
+func (m *TasksReply) Reset()                    { *m = TasksReply{} }
+func (m *TasksReply) String() string            { return proto.CompactTextString(m) }
+func (*TasksReply) ProtoMessage()               {}
+func (*TasksReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{7} }
+
+func (m *TasksReply) GetMessage() string {
+	if m != nil {
+		return m.Message
+	}
+	return ""
 }
 
 // struct part of ListReply Struct
@@ -159,7 +239,28 @@ type StackInfo struct {
 func (m *StackInfo) Reset()                    { *m = StackInfo{} }
 func (m *StackInfo) String() string            { return proto.CompactTextString(m) }
 func (*StackInfo) ProtoMessage()               {}
-func (*StackInfo) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{7} }
+func (*StackInfo) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{8} }
+
+func (m *StackInfo) GetName() string {
+	if m != nil {
+		return m.Name
+	}
+	return ""
+}
+
+func (m *StackInfo) GetId() string {
+	if m != nil {
+		return m.Id
+	}
+	return ""
+}
+
+func (m *StackInfo) GetState() string {
+	if m != nil {
+		return m.State
+	}
+	return ""
+}
 
 // struct to store Stack id in ETCD
 type StackID struct {
@@ -169,7 +270,47 @@ type StackID struct {
 func (m *StackID) Reset()                    { *m = StackID{} }
 func (m *StackID) String() string            { return proto.CompactTextString(m) }
 func (*StackID) ProtoMessage()               {}
-func (*StackID) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{8} }
+func (*StackID) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{9} }
+
+func (m *StackID) GetId() string {
+	if m != nil {
+		return m.Id
+	}
+	return ""
+}
+
+// struct to store network info in ETCD
+type CustomNetwork struct {
+	Id          string       `protobuf:"bytes,1,opt,name=id" json:"id,omitempty"`
+	OwnerNumber int32        `protobuf:"varint,2,opt,name=owner_number,json=ownerNumber" json:"owner_number,omitempty"`
+	Data        *NetworkSpec `protobuf:"bytes,3,opt,name=data" json:"data,omitempty"`
+}
+
+func (m *CustomNetwork) Reset()                    { *m = CustomNetwork{} }
+func (m *CustomNetwork) String() string            { return proto.CompactTextString(m) }
+func (*CustomNetwork) ProtoMessage()               {}
+func (*CustomNetwork) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{10} }
+
+func (m *CustomNetwork) GetId() string {
+	if m != nil {
+		return m.Id
+	}
+	return ""
+}
+
+func (m *CustomNetwork) GetOwnerNumber() int32 {
+	if m != nil {
+		return m.OwnerNumber
+	}
+	return 0
+}
+
+func (m *CustomNetwork) GetData() *NetworkSpec {
+	if m != nil {
+		return m.Data
+	}
+	return nil
+}
 
 // struct to store service id list in ETCD
 type IdList struct {
@@ -179,20 +320,186 @@ type IdList struct {
 func (m *IdList) Reset()                    { *m = IdList{} }
 func (m *IdList) String() string            { return proto.CompactTextString(m) }
 func (*IdList) ProtoMessage()               {}
-func (*IdList) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{9} }
+func (*IdList) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{11} }
+
+func (m *IdList) GetList() []string {
+	if m != nil {
+		return m.List
+	}
+	return nil
+}
+
+type NetworkSpec struct {
+	Name       string            `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
+	Driver     string            `protobuf:"bytes,2,opt,name=driver" json:"driver,omitempty"`
+	EnableIpv6 bool              `protobuf:"varint,3,opt,name=enable_ipv6,json=enableIpv6" json:"enable_ipv6,omitempty"`
+	Ipam       *NetworkIPAM      `protobuf:"bytes,4,opt,name=ipam" json:"ipam,omitempty"`
+	Internal   bool              `protobuf:"varint,5,opt,name=internal" json:"internal,omitempty"`
+	Options    map[string]string `protobuf:"bytes,6,rep,name=options" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Labels     map[string]string `protobuf:"bytes,7,rep,name=labels" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	External   string            `protobuf:"bytes,8,opt,name=external" json:"external,omitempty"`
+}
+
+func (m *NetworkSpec) Reset()                    { *m = NetworkSpec{} }
+func (m *NetworkSpec) String() string            { return proto.CompactTextString(m) }
+func (*NetworkSpec) ProtoMessage()               {}
+func (*NetworkSpec) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{12} }
+
+func (m *NetworkSpec) GetName() string {
+	if m != nil {
+		return m.Name
+	}
+	return ""
+}
+
+func (m *NetworkSpec) GetDriver() string {
+	if m != nil {
+		return m.Driver
+	}
+	return ""
+}
+
+func (m *NetworkSpec) GetEnableIpv6() bool {
+	if m != nil {
+		return m.EnableIpv6
+	}
+	return false
+}
+
+func (m *NetworkSpec) GetIpam() *NetworkIPAM {
+	if m != nil {
+		return m.Ipam
+	}
+	return nil
+}
+
+func (m *NetworkSpec) GetInternal() bool {
+	if m != nil {
+		return m.Internal
+	}
+	return false
+}
+
+func (m *NetworkSpec) GetOptions() map[string]string {
+	if m != nil {
+		return m.Options
+	}
+	return nil
+}
+
+func (m *NetworkSpec) GetLabels() map[string]string {
+	if m != nil {
+		return m.Labels
+	}
+	return nil
+}
+
+func (m *NetworkSpec) GetExternal() string {
+	if m != nil {
+		return m.External
+	}
+	return ""
+}
+
+type NetworkIPAM struct {
+	Driver  string               `protobuf:"bytes,1,opt,name=driver" json:"driver,omitempty"`
+	Options map[string]string    `protobuf:"bytes,2,rep,name=options" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Config  []*NetworkIPAMConfig `protobuf:"bytes,3,rep,name=config" json:"config,omitempty"`
+}
+
+func (m *NetworkIPAM) Reset()                    { *m = NetworkIPAM{} }
+func (m *NetworkIPAM) String() string            { return proto.CompactTextString(m) }
+func (*NetworkIPAM) ProtoMessage()               {}
+func (*NetworkIPAM) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{13} }
+
+func (m *NetworkIPAM) GetDriver() string {
+	if m != nil {
+		return m.Driver
+	}
+	return ""
+}
+
+func (m *NetworkIPAM) GetOptions() map[string]string {
+	if m != nil {
+		return m.Options
+	}
+	return nil
+}
+
+func (m *NetworkIPAM) GetConfig() []*NetworkIPAMConfig {
+	if m != nil {
+		return m.Config
+	}
+	return nil
+}
+
+type NetworkIPAMConfig struct {
+	Subnet     string            `protobuf:"bytes,1,opt,name=subnet" json:"subnet,omitempty"`
+	IpRange    string            `protobuf:"bytes,2,opt,name=ip_range,json=ipRange" json:"ip_range,omitempty"`
+	Gateway    string            `protobuf:"bytes,3,opt,name=gateway" json:"gateway,omitempty"`
+	AuxAddress map[string]string `protobuf:"bytes,4,rep,name=aux_address,json=auxAddress" json:"aux_address,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+}
+
+func (m *NetworkIPAMConfig) Reset()                    { *m = NetworkIPAMConfig{} }
+func (m *NetworkIPAMConfig) String() string            { return proto.CompactTextString(m) }
+func (*NetworkIPAMConfig) ProtoMessage()               {}
+func (*NetworkIPAMConfig) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{14} }
+
+func (m *NetworkIPAMConfig) GetSubnet() string {
+	if m != nil {
+		return m.Subnet
+	}
+	return ""
+}
+
+func (m *NetworkIPAMConfig) GetIpRange() string {
+	if m != nil {
+		return m.IpRange
+	}
+	return ""
+}
+
+func (m *NetworkIPAMConfig) GetGateway() string {
+	if m != nil {
+		return m.Gateway
+	}
+	return ""
+}
+
+func (m *NetworkIPAMConfig) GetAuxAddress() map[string]string {
+	if m != nil {
+		return m.AuxAddress
+	}
+	return nil
+}
 
 // Stack struct
 type Stack struct {
 	Name     string                 `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
 	Id       string                 `protobuf:"bytes,2,opt,name=id" json:"id,omitempty"`
 	Services []*service.ServiceSpec `protobuf:"bytes,3,rep,name=services" json:"services,omitempty"`
-	IsPublic bool                   `protobuf:"varint,4,opt,name=is_public,json=isPublic" json:"is_public,omitempty"`
+	Networks []*NetworkSpec         `protobuf:"bytes,4,rep,name=networks" json:"networks,omitempty"`
+	IsPublic bool                   `protobuf:"varint,5,opt,name=is_public,json=isPublic" json:"is_public,omitempty"`
 }
 
 func (m *Stack) Reset()                    { *m = Stack{} }
 func (m *Stack) String() string            { return proto.CompactTextString(m) }
 func (*Stack) ProtoMessage()               {}
-func (*Stack) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{10} }
+func (*Stack) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{15} }
+
+func (m *Stack) GetName() string {
+	if m != nil {
+		return m.Name
+	}
+	return ""
+}
+
+func (m *Stack) GetId() string {
+	if m != nil {
+		return m.Id
+	}
+	return ""
+}
 
 func (m *Stack) GetServices() []*service.ServiceSpec {
 	if m != nil {
@@ -201,17 +508,36 @@ func (m *Stack) GetServices() []*service.ServiceSpec {
 	return nil
 }
 
+func (m *Stack) GetNetworks() []*NetworkSpec {
+	if m != nil {
+		return m.Networks
+	}
+	return nil
+}
+
+func (m *Stack) GetIsPublic() bool {
+	if m != nil {
+		return m.IsPublic
+	}
+	return false
+}
+
 func init() {
-	proto.RegisterType((*UpRequest)(nil), "stack.UpRequest")
-	proto.RegisterType((*UpReply)(nil), "stack.UpReply")
+	proto.RegisterType((*StackFileRequest)(nil), "stack.StackFileRequest")
 	proto.RegisterType((*StackRequest)(nil), "stack.StackRequest")
-	proto.RegisterType((*RemoveRequest)(nil), "stack.removeRequest")
+	proto.RegisterType((*RemoveRequest)(nil), "stack.RemoveRequest")
 	proto.RegisterType((*StackReply)(nil), "stack.StackReply")
 	proto.RegisterType((*ListRequest)(nil), "stack.ListRequest")
 	proto.RegisterType((*ListReply)(nil), "stack.ListReply")
+	proto.RegisterType((*TasksRequest)(nil), "stack.TasksRequest")
+	proto.RegisterType((*TasksReply)(nil), "stack.TasksReply")
 	proto.RegisterType((*StackInfo)(nil), "stack.StackInfo")
 	proto.RegisterType((*StackID)(nil), "stack.StackID")
+	proto.RegisterType((*CustomNetwork)(nil), "stack.CustomNetwork")
 	proto.RegisterType((*IdList)(nil), "stack.IdList")
+	proto.RegisterType((*NetworkSpec)(nil), "stack.NetworkSpec")
+	proto.RegisterType((*NetworkIPAM)(nil), "stack.NetworkIPAM")
+	proto.RegisterType((*NetworkIPAMConfig)(nil), "stack.NetworkIPAMConfig")
 	proto.RegisterType((*Stack)(nil), "stack.Stack")
 	proto.RegisterEnum("stack.StackState", StackState_name, StackState_value)
 }
@@ -222,16 +548,19 @@ var _ grpc.ClientConn
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the grpc package it is being compiled against.
-const _ = grpc.SupportPackageIsVersion3
+const _ = grpc.SupportPackageIsVersion4
 
 // Client API for StackService service
 
 type StackServiceClient interface {
-	Up(ctx context.Context, in *UpRequest, opts ...grpc.CallOption) (*UpReply, error)
+	Up(ctx context.Context, in *StackFileRequest, opts ...grpc.CallOption) (*StackReply, error)
+	Create(ctx context.Context, in *StackFileRequest, opts ...grpc.CallOption) (*StackReply, error)
 	Start(ctx context.Context, in *StackRequest, opts ...grpc.CallOption) (*StackReply, error)
 	Stop(ctx context.Context, in *StackRequest, opts ...grpc.CallOption) (*StackReply, error)
 	Remove(ctx context.Context, in *RemoveRequest, opts ...grpc.CallOption) (*StackReply, error)
+	Get(ctx context.Context, in *StackRequest, opts ...grpc.CallOption) (*StackFileRequest, error)
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListReply, error)
+	Tasks(ctx context.Context, in *TasksRequest, opts ...grpc.CallOption) (*TasksReply, error)
 }
 
 type stackServiceClient struct {
@@ -242,9 +571,18 @@ func NewStackServiceClient(cc *grpc.ClientConn) StackServiceClient {
 	return &stackServiceClient{cc}
 }
 
-func (c *stackServiceClient) Up(ctx context.Context, in *UpRequest, opts ...grpc.CallOption) (*UpReply, error) {
-	out := new(UpReply)
+func (c *stackServiceClient) Up(ctx context.Context, in *StackFileRequest, opts ...grpc.CallOption) (*StackReply, error) {
+	out := new(StackReply)
 	err := grpc.Invoke(ctx, "/stack.StackService/Up", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stackServiceClient) Create(ctx context.Context, in *StackFileRequest, opts ...grpc.CallOption) (*StackReply, error) {
+	out := new(StackReply)
+	err := grpc.Invoke(ctx, "/stack.StackService/Create", in, out, c.cc, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -278,6 +616,15 @@ func (c *stackServiceClient) Remove(ctx context.Context, in *RemoveRequest, opts
 	return out, nil
 }
 
+func (c *stackServiceClient) Get(ctx context.Context, in *StackRequest, opts ...grpc.CallOption) (*StackFileRequest, error) {
+	out := new(StackFileRequest)
+	err := grpc.Invoke(ctx, "/stack.StackService/Get", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *stackServiceClient) List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListReply, error) {
 	out := new(ListReply)
 	err := grpc.Invoke(ctx, "/stack.StackService/List", in, out, c.cc, opts...)
@@ -287,14 +634,26 @@ func (c *stackServiceClient) List(ctx context.Context, in *ListRequest, opts ...
 	return out, nil
 }
 
+func (c *stackServiceClient) Tasks(ctx context.Context, in *TasksRequest, opts ...grpc.CallOption) (*TasksReply, error) {
+	out := new(TasksReply)
+	err := grpc.Invoke(ctx, "/stack.StackService/Tasks", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Server API for StackService service
 
 type StackServiceServer interface {
-	Up(context.Context, *UpRequest) (*UpReply, error)
+	Up(context.Context, *StackFileRequest) (*StackReply, error)
+	Create(context.Context, *StackFileRequest) (*StackReply, error)
 	Start(context.Context, *StackRequest) (*StackReply, error)
 	Stop(context.Context, *StackRequest) (*StackReply, error)
 	Remove(context.Context, *RemoveRequest) (*StackReply, error)
+	Get(context.Context, *StackRequest) (*StackFileRequest, error)
 	List(context.Context, *ListRequest) (*ListReply, error)
+	Tasks(context.Context, *TasksRequest) (*TasksReply, error)
 }
 
 func RegisterStackServiceServer(s *grpc.Server, srv StackServiceServer) {
@@ -302,7 +661,7 @@ func RegisterStackServiceServer(s *grpc.Server, srv StackServiceServer) {
 }
 
 func _StackService_Up_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpRequest)
+	in := new(StackFileRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -314,7 +673,25 @@ func _StackService_Up_Handler(srv interface{}, ctx context.Context, dec func(int
 		FullMethod: "/stack.StackService/Up",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StackServiceServer).Up(ctx, req.(*UpRequest))
+		return srv.(StackServiceServer).Up(ctx, req.(*StackFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StackService_Create_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StackFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StackServiceServer).Create(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/stack.StackService/Create",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StackServiceServer).Create(ctx, req.(*StackFileRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -373,6 +750,24 @@ func _StackService_Remove_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StackService_Get_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StackServiceServer).Get(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/stack.StackService/Get",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StackServiceServer).Get(ctx, req.(*StackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StackService_List_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListRequest)
 	if err := dec(in); err != nil {
@@ -391,6 +786,24 @@ func _StackService_List_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StackService_Tasks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TasksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StackServiceServer).Tasks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/stack.StackService/Tasks",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StackServiceServer).Tasks(ctx, req.(*TasksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _StackService_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "stack.StackService",
 	HandlerType: (*StackServiceServer)(nil),
@@ -398,6 +811,10 @@ var _StackService_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Up",
 			Handler:    _StackService_Up_Handler,
+		},
+		{
+			MethodName: "Create",
+			Handler:    _StackService_Create_Handler,
 		},
 		{
 			MethodName: "Start",
@@ -412,12 +829,20 @@ var _StackService_serviceDesc = grpc.ServiceDesc{
 			Handler:    _StackService_Remove_Handler,
 		},
 		{
+			MethodName: "Get",
+			Handler:    _StackService_Get_Handler,
+		},
+		{
 			MethodName: "List",
 			Handler:    _StackService_List_Handler,
 		},
+		{
+			MethodName: "Tasks",
+			Handler:    _StackService_Tasks_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: fileDescriptor0,
+	Metadata: "github.com/appcelerator/amp/api/rpc/stack/stack.proto",
 }
 
 func init() {
@@ -425,36 +850,69 @@ func init() {
 }
 
 var fileDescriptor0 = []byte{
-	// 489 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0x8c, 0x53, 0xdf, 0x8b, 0xd3, 0x40,
-	0x10, 0x36, 0x69, 0xda, 0x26, 0x93, 0xbb, 0xb3, 0xae, 0x7d, 0xc8, 0xd5, 0x13, 0x25, 0x1c, 0x7a,
-	0x88, 0x24, 0xde, 0x89, 0x0f, 0xbe, 0x7b, 0x62, 0x41, 0x44, 0x12, 0xee, 0xf9, 0x48, 0x93, 0xe9,
-	0xb9, 0x98, 0x64, 0xd7, 0xcd, 0xb6, 0x50, 0xff, 0x72, 0x1f, 0x65, 0x7f, 0xa4, 0xa4, 0x20, 0xd8,
-	0x97, 0x66, 0xbf, 0x6f, 0xe6, 0xfb, 0x66, 0x76, 0x76, 0x0a, 0x1f, 0x1e, 0xa8, 0xfc, 0xb1, 0x59,
-	0x25, 0x25, 0x6b, 0xd2, 0x82, 0xf3, 0x12, 0x6b, 0x14, 0x85, 0x64, 0x22, 0x2d, 0x1a, 0x9e, 0x16,
-	0x9c, 0xa6, 0x82, 0x97, 0x69, 0x27, 0x8b, 0xf2, 0xa7, 0xf9, 0x4d, 0xb8, 0x60, 0x92, 0x91, 0xb1,
-	0x06, 0x8b, 0x8f, 0x47, 0xa9, 0x51, 0x6c, 0x69, 0x89, 0xfd, 0xd7, 0x38, 0xc4, 0x5f, 0x20, 0xb8,
-	0xe3, 0x19, 0xfe, 0xda, 0x60, 0x27, 0xc9, 0x73, 0x00, 0x6d, 0x78, 0xdf, 0x16, 0x0d, 0x46, 0xce,
-	0x4b, 0xe7, 0x2a, 0xc8, 0x02, 0xcd, 0x7c, 0x2b, 0x1a, 0x24, 0x17, 0x60, 0xc0, 0x9a, 0xd6, 0x18,
-	0xb9, 0x83, 0xa8, 0x22, 0xe2, 0x4b, 0x98, 0x2a, 0x27, 0x5e, 0xef, 0xc8, 0x39, 0xf8, 0xc6, 0x87,
-	0x56, 0xd6, 0x65, 0xaa, 0xf1, 0xb2, 0x8a, 0x53, 0x38, 0xc9, 0xd5, 0xb1, 0x2f, 0xf9, 0x02, 0xc2,
-	0x3e, 0x15, 0x5b, 0x69, 0xb3, 0xc1, 0x66, 0x63, 0x2b, 0xe3, 0xcf, 0x70, 0x2a, 0xb0, 0x61, 0x5b,
-	0x3c, 0x56, 0x41, 0xe6, 0x30, 0x5e, 0x33, 0x51, 0x9a, 0x16, 0xfd, 0xcc, 0x80, 0xf8, 0x35, 0x80,
-	0x2d, 0xfc, 0x9f, 0x0e, 0x4f, 0x21, 0xfc, 0x4a, 0x3b, 0x69, 0xcb, 0xc5, 0xd7, 0x10, 0x18, 0xa8,
-	0x64, 0x97, 0xe0, 0xd5, 0xb4, 0x53, 0x45, 0x47, 0x57, 0xe1, 0xcd, 0x2c, 0x31, 0x6f, 0xa1, 0x7d,
-	0x97, 0xed, 0x9a, 0x65, 0x3a, 0x1a, 0xdf, 0x42, 0xb0, 0xa7, 0x08, 0x01, 0x6f, 0x30, 0x4d, 0x7d,
-	0x26, 0x67, 0xe0, 0xd2, 0xca, 0x4e, 0xd0, 0xa5, 0x95, 0xea, 0xb8, 0x93, 0x85, 0xc4, 0x68, 0xa4,
-	0x29, 0x03, 0xe2, 0x73, 0x98, 0x1a, 0x9b, 0x4f, 0x56, 0xe0, 0xf4, 0x82, 0xf8, 0x02, 0x26, 0xcb,
-	0x4a, 0xb5, 0xa5, 0xec, 0xf7, 0x1d, 0x05, 0xb6, 0xfe, 0x6f, 0x18, 0x6b, 0xe1, 0x51, 0xb5, 0xdf,
-	0x81, 0x6f, 0x37, 0xa2, 0x8b, 0x46, 0xfa, 0x5a, 0xf3, 0xa4, 0x5f, 0x91, 0xdc, 0x7c, 0x73, 0x8e,
-	0x65, 0xb6, 0xcf, 0x22, 0xcf, 0x20, 0xa0, 0xdd, 0x3d, 0xdf, 0xac, 0x6a, 0x5a, 0x46, 0x9e, 0x9e,
-	0xb1, 0x4f, 0xbb, 0xef, 0x1a, 0xbf, 0xb9, 0xb5, 0x63, 0xce, 0xd5, 0x15, 0x48, 0xa8, 0xae, 0xc0,
-	0x38, 0xc7, 0x6a, 0xf6, 0x88, 0x9c, 0x80, 0x9f, 0xcb, 0x42, 0x48, 0xda, 0x3e, 0xcc, 0x1c, 0x15,
-	0xca, 0x36, 0x6d, 0xab, 0x80, 0x4b, 0x1e, 0x43, 0x98, 0x61, 0x85, 0xbc, 0x66, 0x3b, 0x45, 0x8c,
-	0x6e, 0xfe, 0x38, 0x76, 0x4f, 0x6c, 0x0b, 0xe4, 0x15, 0xb8, 0x77, 0x9c, 0xf4, 0x13, 0xdf, 0xaf,
-	0xec, 0xe2, 0x6c, 0xc0, 0xa8, 0x17, 0x4a, 0xf5, 0xdd, 0x85, 0x24, 0x4f, 0x87, 0x8f, 0xd3, 0x67,
-	0x3f, 0x39, 0x24, 0x95, 0x20, 0x01, 0x4f, 0xb5, 0x78, 0x74, 0xfe, 0x35, 0x4c, 0x32, 0xbd, 0x8f,
-	0x64, 0x6e, 0x83, 0x07, 0xeb, 0xf9, 0x2f, 0xc9, 0x5b, 0xf0, 0xcc, 0x5b, 0xd9, 0xd0, 0x60, 0xbd,
-	0x16, 0xb3, 0x03, 0x8e, 0xd7, 0xbb, 0xd5, 0x44, 0xff, 0x31, 0xdf, 0xff, 0x0d, 0x00, 0x00, 0xff,
-	0xff, 0x23, 0x91, 0xda, 0xca, 0x13, 0x04, 0x00, 0x00,
+	// 1022 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0xa4, 0x56, 0xcf, 0x6e, 0x23, 0x45,
+	0x13, 0xff, 0xc6, 0xff, 0x5d, 0xe3, 0xdd, 0x75, 0xfa, 0x8b, 0xc8, 0xc4, 0x84, 0xcd, 0x32, 0x5a,
+	0x96, 0x28, 0x07, 0x7b, 0x37, 0x68, 0x23, 0x12, 0x09, 0xa1, 0x28, 0x64, 0x91, 0xd1, 0xb2, 0xac,
+	0x3a, 0x81, 0xab, 0xd5, 0xf6, 0x74, 0x4c, 0x93, 0xf1, 0x4c, 0x33, 0xd3, 0xe3, 0x24, 0x42, 0x5c,
+	0x78, 0x05, 0x24, 0x9e, 0x80, 0x13, 0x0f, 0xc3, 0x85, 0x57, 0xe0, 0xc4, 0x53, 0xa0, 0xae, 0xee,
+	0x99, 0x4c, 0x36, 0xb6, 0xe4, 0x88, 0x8b, 0x3d, 0x55, 0x5d, 0xf5, 0xab, 0xaa, 0x5f, 0x4d, 0x57,
+	0x0d, 0xbc, 0x9c, 0x0a, 0xf5, 0x7d, 0x36, 0xee, 0x4f, 0xe2, 0xd9, 0x80, 0x49, 0x39, 0xe1, 0x21,
+	0x4f, 0x98, 0x8a, 0x93, 0x01, 0x9b, 0xc9, 0x01, 0x93, 0x62, 0x90, 0xc8, 0xc9, 0x20, 0x55, 0x6c,
+	0x72, 0x61, 0x7e, 0xfb, 0x32, 0x89, 0x55, 0x4c, 0xea, 0x28, 0xf4, 0xb6, 0xa6, 0x71, 0x3c, 0x0d,
+	0x39, 0x1a, 0xb2, 0x28, 0x8a, 0x15, 0x53, 0x22, 0x8e, 0x52, 0x63, 0xd4, 0x3b, 0x58, 0x09, 0x9b,
+	0x27, 0x73, 0x31, 0xe1, 0xf9, 0xbf, 0x71, 0xf5, 0xf7, 0xa1, 0x7b, 0xaa, 0x23, 0xbc, 0x12, 0x21,
+	0xa7, 0xfc, 0xc7, 0x8c, 0xa7, 0x8a, 0xf8, 0x60, 0xa2, 0x7a, 0xce, 0x13, 0x67, 0xc7, 0xdd, 0xeb,
+	0xf4, 0x4d, 0x42, 0x68, 0x47, 0xcd, 0x91, 0x3f, 0x80, 0x8e, 0x91, 0xad, 0xcf, 0x36, 0xb8, 0x78,
+	0x30, 0x12, 0x01, 0x8f, 0x14, 0x7a, 0xb6, 0x29, 0xa0, 0x6a, 0xa8, 0x35, 0xfe, 0x2b, 0x78, 0x40,
+	0xf9, 0x2c, 0x9e, 0xf3, 0x55, 0x3d, 0xc8, 0x3a, 0xd4, 0xcf, 0xe3, 0x64, 0xc2, 0xbd, 0xca, 0x13,
+	0x67, 0xa7, 0x45, 0x8d, 0xe0, 0x7f, 0x0c, 0x60, 0x03, 0xcb, 0xf0, 0x9a, 0x6c, 0x42, 0x2b, 0x07,
+	0xb1, 0x08, 0x4d, 0x8b, 0xe0, 0xbf, 0x04, 0xf7, 0xb5, 0x48, 0x55, 0x1e, 0xae, 0x0b, 0x55, 0x16,
+	0x86, 0x68, 0xd4, 0xa2, 0xfa, 0x51, 0xe3, 0x87, 0x62, 0x26, 0x14, 0xe2, 0x57, 0xa9, 0x11, 0xfc,
+	0x17, 0xd0, 0x36, 0x6e, 0x1a, 0xfe, 0x29, 0xd4, 0x42, 0x91, 0xea, 0xe4, 0xaa, 0x3b, 0xee, 0x5e,
+	0xb7, 0x4c, 0xc4, 0x30, 0x3a, 0x8f, 0x29, 0x9e, 0x6a, 0x2e, 0xce, 0x58, 0x7a, 0x91, 0xae, 0xcc,
+	0xc5, 0x33, 0x00, 0xeb, 0xa0, 0x83, 0x78, 0xd0, 0x9c, 0xf1, 0x34, 0x65, 0x53, 0x9e, 0x97, 0x60,
+	0x45, 0xff, 0x04, 0xda, 0x45, 0x2c, 0x42, 0xa0, 0x16, 0xb1, 0x59, 0x6e, 0x83, 0xcf, 0xe4, 0x21,
+	0x54, 0x44, 0x80, 0xf9, 0xb7, 0x69, 0x45, 0x04, 0xba, 0xa4, 0x54, 0x31, 0xc5, 0xbd, 0x2a, 0xaa,
+	0x8c, 0xe0, 0x6f, 0x42, 0xd3, 0xc0, 0x7c, 0x61, 0x1d, 0x9c, 0xdc, 0xc1, 0xff, 0x01, 0x1e, 0x1c,
+	0x67, 0xa9, 0x8a, 0x67, 0x6f, 0xb8, 0xba, 0x8c, 0x93, 0x8b, 0x77, 0x0d, 0xc8, 0x87, 0xd0, 0x89,
+	0x2f, 0x23, 0x9e, 0x8c, 0xa2, 0x6c, 0x36, 0xe6, 0x09, 0xc6, 0xaa, 0x53, 0x17, 0x75, 0x6f, 0x50,
+	0x45, 0x9e, 0x41, 0x2d, 0x60, 0x8a, 0x61, 0x4c, 0x77, 0x8f, 0x58, 0x92, 0x2c, 0xe0, 0xa9, 0xe4,
+	0x13, 0x8a, 0xe7, 0xfe, 0x16, 0x34, 0x86, 0x81, 0xe6, 0x56, 0x97, 0x52, 0xd0, 0xda, 0xb6, 0x24,
+	0xfe, 0x5e, 0x05, 0xb7, 0xe4, 0xb3, 0xb0, 0xdc, 0xf7, 0xa0, 0x11, 0x24, 0x62, 0x6e, 0xd3, 0x68,
+	0x53, 0x2b, 0x69, 0xc2, 0x79, 0xc4, 0xc6, 0x21, 0x1f, 0x09, 0x39, 0xdf, 0xc7, 0x44, 0x5a, 0x14,
+	0x8c, 0x6a, 0x28, 0xe7, 0xfb, 0x3a, 0x45, 0x21, 0xd9, 0xcc, 0xab, 0x2d, 0x4a, 0x71, 0xf8, 0xf6,
+	0xe8, 0x6b, 0x8a, 0xe7, 0xa4, 0x07, 0x2d, 0x11, 0x29, 0x9e, 0x44, 0x2c, 0xf4, 0xea, 0x88, 0x52,
+	0xc8, 0xe4, 0x00, 0x9a, 0xb1, 0xc4, 0x5b, 0xe7, 0x35, 0xf0, 0x75, 0xd8, 0xbe, 0x5b, 0x69, 0xff,
+	0x1b, 0x63, 0x71, 0x12, 0xa9, 0xe4, 0x9a, 0xe6, 0xf6, 0x64, 0x1f, 0x1a, 0x21, 0x1b, 0xf3, 0x30,
+	0xf5, 0x9a, 0xe8, 0xf9, 0x78, 0x81, 0xe7, 0x6b, 0x34, 0x30, 0x8e, 0xd6, 0x5a, 0xa7, 0xc3, 0xaf,
+	0x6c, 0x3a, 0x2d, 0xac, 0xb8, 0x90, 0x7b, 0x87, 0xd0, 0x29, 0x07, 0xd3, 0xef, 0xf7, 0x05, 0xbf,
+	0xb6, 0x74, 0xe9, 0x47, 0xfd, 0x32, 0xcc, 0x59, 0x98, 0x71, 0x4b, 0x96, 0x11, 0x0e, 0x2b, 0x9f,
+	0x3a, 0xbd, 0x03, 0x70, 0x4b, 0xe1, 0xee, 0xe3, 0xea, 0xff, 0xe9, 0x14, 0x6d, 0xd2, 0xbc, 0x95,
+	0x5a, 0xe2, 0xdc, 0x6a, 0x49, 0x89, 0xad, 0xca, 0x22, 0xb6, 0xb4, 0xf3, 0x12, 0xb6, 0x9e, 0x43,
+	0x63, 0x12, 0x47, 0xe7, 0x62, 0xea, 0x55, 0xd1, 0xd3, 0xbb, 0xeb, 0x79, 0x8c, 0xe7, 0xd4, 0xda,
+	0xfd, 0x17, 0x2e, 0xfc, 0x7f, 0x1c, 0x58, 0xbb, 0x83, 0xac, 0xcb, 0x4a, 0xb3, 0x71, 0xc4, 0xf3,
+	0xdb, 0x6b, 0x25, 0x3d, 0x6f, 0x84, 0x1c, 0x25, 0x2c, 0x9a, 0xe6, 0x50, 0x4d, 0x21, 0xa9, 0x16,
+	0xf5, 0x35, 0x9e, 0x32, 0xc5, 0x2f, 0xd9, 0xb5, 0xbd, 0x7d, 0xb9, 0x48, 0x86, 0xe0, 0xb2, 0xec,
+	0x6a, 0xc4, 0x82, 0x20, 0xe1, 0x69, 0xea, 0xd5, 0xb0, 0xaa, 0x9d, 0x65, 0x55, 0xf5, 0x8f, 0xb2,
+	0xab, 0x23, 0x63, 0x6a, 0x88, 0x01, 0x56, 0x28, 0x7a, 0x9f, 0xc1, 0xa3, 0x77, 0x8e, 0xef, 0x55,
+	0xec, 0x1f, 0x0e, 0xd4, 0x71, 0x14, 0xac, 0x34, 0x4d, 0x9e, 0x43, 0xcb, 0x2e, 0x8b, 0xd4, 0xb6,
+	0x62, 0xbd, 0x9f, 0x6f, 0x8f, 0x53, 0xf3, 0x8f, 0xd7, 0xbb, 0xb0, 0x22, 0x7d, 0x68, 0x45, 0xa6,
+	0x9e, 0xbc, 0xcc, 0x45, 0xe3, 0xa0, 0xb0, 0x21, 0xef, 0x43, 0x5b, 0xa4, 0x23, 0x99, 0x8d, 0x43,
+	0x31, 0x29, 0x2e, 0x5c, 0xfa, 0x16, 0xe5, 0xdd, 0x13, 0x3b, 0xe9, 0x4f, 0xf5, 0x10, 0x23, 0xae,
+	0x1e, 0x62, 0xb1, 0x94, 0x3c, 0xe8, 0xfe, 0x8f, 0x74, 0xa0, 0x75, 0xaa, 0x58, 0xa2, 0x44, 0x34,
+	0xed, 0x3a, 0xfa, 0x88, 0x66, 0x51, 0xa4, 0x85, 0x0a, 0x79, 0x04, 0x2e, 0xe5, 0x01, 0x97, 0x61,
+	0x7c, 0xad, 0x15, 0xd5, 0xbd, 0xdf, 0xea, 0x76, 0x55, 0xd9, 0x94, 0xc9, 0x10, 0x2a, 0xdf, 0x4a,
+	0xb2, 0x51, 0x1e, 0xe6, 0xa5, 0xed, 0xd7, 0x5b, 0xbb, 0xb5, 0xee, 0xf4, 0x84, 0xf6, 0x37, 0x7e,
+	0xf9, 0xeb, 0xef, 0x5f, 0x2b, 0x6b, 0x7e, 0x67, 0x30, 0x7f, 0x61, 0x77, 0x74, 0x26, 0x0f, 0x9d,
+	0x5d, 0xf2, 0x15, 0x34, 0x8e, 0x13, 0xae, 0xd3, 0xbb, 0x0f, 0xdc, 0x3a, 0xc2, 0x3d, 0xf4, 0xdb,
+	0x05, 0x9c, 0xc6, 0xfa, 0x0e, 0x5b, 0x93, 0x28, 0xf2, 0xff, 0xdb, 0x1e, 0x4b, 0x61, 0x3e, 0x42,
+	0x98, 0x6d, 0xff, 0x83, 0x9b, 0xac, 0x7e, 0x2a, 0xed, 0x9d, 0x9f, 0xb5, 0x2e, 0x51, 0xe4, 0x0c,
+	0x6a, 0x9a, 0xb8, 0x95, 0x61, 0x9f, 0x22, 0xec, 0x63, 0x7f, 0x6b, 0x39, 0x6c, 0x2c, 0x09, 0x85,
+	0x86, 0x59, 0xe7, 0x64, 0xdd, 0x42, 0xdc, 0xda, 0xee, 0x8b, 0x80, 0xb7, 0x11, 0x78, 0x73, 0x77,
+	0x63, 0x09, 0x30, 0x39, 0x83, 0xea, 0x97, 0x7c, 0x49, 0xfd, 0xcb, 0xf8, 0xcd, 0x51, 0xc9, 0x52,
+	0xd4, 0xcf, 0xa1, 0x66, 0x96, 0x8e, 0x45, 0x28, 0x7d, 0x14, 0xf4, 0xba, 0xb7, 0x74, 0x3a, 0xc9,
+	0x35, 0x84, 0x73, 0xc9, 0x4d, 0x6f, 0x74, 0x63, 0x70, 0x5b, 0x17, 0x89, 0x95, 0x97, 0x7d, 0x51,
+	0xe8, 0xcd, 0x42, 0xcf, 0x1b, 0x43, 0x96, 0x36, 0x46, 0x69, 0xdb, 0x71, 0x03, 0xbf, 0xc0, 0x3e,
+	0xf9, 0x37, 0x00, 0x00, 0xff, 0xff, 0xed, 0x92, 0x6c, 0xd2, 0x1a, 0x0a, 0x00, 0x00,
 }

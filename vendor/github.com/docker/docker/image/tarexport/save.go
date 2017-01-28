@@ -77,11 +77,11 @@ func (l *tarexporter) parseNames(names []string) (map[image.ID]*imageDescriptor,
 			return nil, err
 		}
 		if id != "" {
-			_, err := l.is.Get(image.ID(id))
+			_, err := l.is.Get(image.IDFromDigest(id))
 			if err != nil {
 				return nil, err
 			}
-			addAssoc(image.ID(id), nil)
+			addAssoc(image.IDFromDigest(id), nil)
 			continue
 		}
 		if ref.Name() == string(digest.Canonical) {
@@ -95,7 +95,7 @@ func (l *tarexporter) parseNames(names []string) (map[image.ID]*imageDescriptor,
 		if reference.IsNameOnly(ref) {
 			assocs := l.rs.ReferencesByName(ref)
 			for _, assoc := range assocs {
-				addAssoc(assoc.ImageID, assoc.Ref)
+				addAssoc(image.IDFromDigest(assoc.ID), assoc.Ref)
 			}
 			if len(assocs) == 0 {
 				imgID, err := l.is.Search(name)
@@ -106,11 +106,11 @@ func (l *tarexporter) parseNames(names []string) (map[image.ID]*imageDescriptor,
 			}
 			continue
 		}
-		var imgID image.ID
-		if imgID, err = l.rs.Get(ref); err != nil {
+		id, err = l.rs.Get(ref)
+		if err != nil {
 			return nil, err
 		}
-		addAssoc(imgID, ref)
+		addAssoc(image.IDFromDigest(id), ref)
 
 	}
 	return imgDescr, nil
@@ -155,7 +155,7 @@ func (s *saveSession) save(outStream io.Writer) error {
 		}
 
 		manifest = append(manifest, manifestItem{
-			Config:       digest.Digest(id).Hex() + ".json",
+			Config:       id.Digest().Hex() + ".json",
 			RepoTags:     repoTags,
 			Layers:       layers,
 			LayerSources: foreignSrcs,
@@ -234,7 +234,9 @@ func (s *saveSession) saveImage(id image.ID) (map[layer.DiffID]distribution.Desc
 	var layers []string
 	var foreignSrcs map[layer.DiffID]distribution.Descriptor
 	for i := range img.RootFS.DiffIDs {
-		v1Img := image.V1Image{}
+		v1Img := image.V1Image{
+			Created: img.Created,
+		}
 		if i == len(img.RootFS.DiffIDs)-1 {
 			v1Img = img.V1Image
 		}
@@ -264,7 +266,7 @@ func (s *saveSession) saveImage(id image.ID) (map[layer.DiffID]distribution.Desc
 		}
 	}
 
-	configFile := filepath.Join(s.outDir, digest.Digest(id).Hex()+".json")
+	configFile := filepath.Join(s.outDir, id.Digest().Hex()+".json")
 	if err := ioutil.WriteFile(configFile, img.RawJSON(), 0644); err != nil {
 		return nil, err
 	}
@@ -315,8 +317,10 @@ func (s *saveSession) saveLayer(id layer.ChainID, legacyImg image.V1Image, creat
 		}
 		os.Symlink(relPath, layerPath)
 	} else {
-
-		tarFile, err := os.Create(layerPath)
+		// Use system.CreateSequential rather than os.Create. This ensures sequential
+		// file access on Windows to avoid eating into MM standby list.
+		// On Linux, this equates to a regular os.Create.
+		tarFile, err := system.CreateSequential(layerPath)
 		if err != nil {
 			return distribution.Descriptor{}, err
 		}

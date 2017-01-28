@@ -1,20 +1,25 @@
-<!--[metadata]>
-+++
-aliases = "/engine/extend/plugins/"
-title = "Use Docker Engine plugins"
-description = "How to add additional functionality to Docker with plugins extensions"
-keywords = ["Examples, Usage, plugins, docker, documentation, user guide"]
-[menu.main]
-parent = "engine_extend"
-weight=3
-+++
-<![end-metadata]-->
+---
+redirect_from:
+- "/engine/extend/plugins/"
+title: "Use Docker Engine plugins"
+description: "How to add additional functionality to Docker with plugins extensions"
+keywords: "Examples, Usage, plugins, docker, documentation, user guide"
+---
+
+<!-- This file is maintained within the docker/docker Github
+     repository at https://github.com/docker/docker/. Make all
+     pull requests against that repo. If you see this file in
+     another repository, consider it read-only there, as it will
+     periodically be overwritten by the definitive file. Pull
+     requests which include edits to this file in other repositories
+     will be rejected.
+-->
 
 # Use Docker Engine plugins
 
 This document describes the Docker Engine plugins generally available in Docker
-Engine. To view information on plugins managed by Docker Engine currently in
-experimental status, refer to [Docker Engine plugin system](index.md).
+Engine. To view information on plugins managed by Docker,
+refer to [Docker Engine plugin system](index.md).
 
 You can extend the capabilities of the Docker Engine by loading third-party
 plugins. This page explains the types of plugins and provides links to several
@@ -70,6 +75,7 @@ Plugin                                                                          
 [NetApp Plugin](https://github.com/NetApp/netappdvp) (nDVP)                         | A volume plugin that provides direct integration with the Docker ecosystem for the NetApp storage portfolio. The nDVP package supports the provisioning and management of storage resources from the storage platform to Docker hosts, with a robust framework for adding additional platforms in the future.
 [Netshare plugin](https://github.com/ContainX/docker-volume-netshare)                 | A volume plugin that provides volume management for NFS 3/4, AWS EFS and CIFS file systems.
 [OpenStorage Plugin](https://github.com/libopenstorage/openstorage)                 | A cluster-aware volume plugin that provides volume management for file and block storage solutions.  It implements a vendor neutral specification for implementing extensions such as CoS, encryption, and snapshots. It has example drivers based on FUSE, NFS, NBD and EBS to name a few.
+[Portworx Volume Plugin](https://github.com/portworx/px-dev)                        | A volume plugin that turns any server into a scale-out converged compute/storage node, providing container granular storage and highly available volumes across any node, using a shared-nothing storage backend that works with any docker scheduler.
 [Quobyte Volume Plugin](https://github.com/quobyte/docker-volume)                   | A volume plugin that connects Docker to [Quobyte](http://www.quobyte.com/containers)'s data center file system, a general-purpose scalable and fault-tolerant storage platform.
 [REX-Ray plugin](https://github.com/emccode/rexray)                                 | A volume plugin which is written in Go and provides advanced storage functionality for many platforms including VirtualBox, EC2, Google Compute Engine, OpenStack, and EMC.
 [Virtuozzo Storage and Ploop plugin](https://github.com/virtuozzo/docker-volume-ploop) | A volume plugin with support for Virtuozzo Storage distributed cloud file system as well as ploop devices.

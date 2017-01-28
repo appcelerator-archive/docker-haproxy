@@ -3,17 +3,19 @@ package daemon
 import (
 	"fmt"
 	"net"
+	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/Sirupsen/logrus"
+	apierrors "github.com/docker/docker/api/errors"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/network"
 	clustertypes "github.com/docker/docker/daemon/cluster/provider"
-	"github.com/docker/docker/errors"
 	"github.com/docker/docker/runconfig"
 	"github.com/docker/libnetwork"
 	networktypes "github.com/docker/libnetwork/types"
+	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 )
 
@@ -59,6 +61,7 @@ func (daemon *Daemon) GetNetworkByID(partialID string) (libnetwork.Network, erro
 }
 
 // GetNetworkByName function returns a network for a given network name.
+// If no network name is given, the default network is returned.
 func (daemon *Daemon) GetNetworkByName(name string) (libnetwork.Network, error) {
 	c := daemon.netController
 	if c == nil {
@@ -177,6 +180,10 @@ func (daemon *Daemon) SetupIngress(create clustertypes.NetworkCreateRequest, nod
 		if err := ep.Join(sb, nil); err != nil {
 			logrus.Errorf("Failed joining ingress sandbox to ingress endpoint: %v", err)
 		}
+
+		if err := sb.EnableService(); err != nil {
+			logrus.WithError(err).Error("Failed enabling service for ingress sandbox")
+		}
 	}()
 
 	return nil
@@ -235,7 +242,7 @@ func (daemon *Daemon) createNetwork(create types.NetworkCreateRequest, id string
 
 	if runconfig.IsPreDefinedNetwork(create.Name) && !agent {
 		err := fmt.Errorf("%s is a pre-defined network and cannot be created", create.Name)
-		return nil, errors.NewRequestForbiddenError(err)
+		return nil, apierrors.NewRequestForbiddenError(err)
 	}
 
 	var warning string
@@ -262,6 +269,7 @@ func (daemon *Daemon) createNetwork(create types.NetworkCreateRequest, id string
 		libnetwork.NetworkOptionEnableIPv6(create.EnableIPv6),
 		libnetwork.NetworkOptionDriverOpts(create.Options),
 		libnetwork.NetworkOptionLabels(create.Labels),
+		libnetwork.NetworkOptionAttachable(create.Attachable),
 	}
 
 	if create.IPAM != nil {
@@ -291,6 +299,7 @@ func (daemon *Daemon) createNetwork(create types.NetworkCreateRequest, id string
 	}
 
 	daemon.LogNetworkEvent(n, "create")
+
 	return &types.NetworkCreateResponse{
 		ID:      n.ID(),
 		Warning: warning,
@@ -334,6 +343,9 @@ func (daemon *Daemon) UpdateContainerServiceConfig(containerName string, service
 // network. If either cannot be found, an err is returned. If the
 // network cannot be set up, an err is returned.
 func (daemon *Daemon) ConnectContainerToNetwork(containerName, networkName string, endpointConfig *network.EndpointSettings) error {
+	if runtime.GOOS == "solaris" {
+		return errors.New("docker network connect is unsupported on Solaris platform")
+	}
 	container, err := daemon.GetContainer(containerName)
 	if err != nil {
 		return err
@@ -344,6 +356,9 @@ func (daemon *Daemon) ConnectContainerToNetwork(containerName, networkName strin
 // DisconnectContainerFromNetwork disconnects the given container from
 // the given network. If either cannot be found, an err is returned.
 func (daemon *Daemon) DisconnectContainerFromNetwork(containerName string, networkName string, force bool) error {
+	if runtime.GOOS == "solaris" {
+		return errors.New("docker network disconnect is unsupported on Solaris platform")
+	}
 	container, err := daemon.GetContainer(containerName)
 	if err != nil {
 		if force {
@@ -357,12 +372,16 @@ func (daemon *Daemon) DisconnectContainerFromNetwork(containerName string, netwo
 // GetNetworkDriverList returns the list of plugins drivers
 // registered for network.
 func (daemon *Daemon) GetNetworkDriverList() []string {
-	pluginList := []string{}
-	pluginMap := make(map[string]bool)
-
 	if !daemon.NetworkControllerEnabled() {
 		return nil
 	}
+
+	pluginList := daemon.netController.BuiltinDrivers()
+	pluginMap := make(map[string]bool)
+	for _, plugin := range pluginList {
+		pluginMap[plugin] = true
+	}
+
 	networks := daemon.netController.Networks()
 
 	for _, network := range networks {
@@ -371,8 +390,6 @@ func (daemon *Daemon) GetNetworkDriverList() []string {
 			pluginMap[network.Type()] = true
 		}
 	}
-	// TODO : Replace this with proper libnetwork API
-	pluginList = append(pluginList, "overlay")
 
 	sort.Strings(pluginList)
 
@@ -397,7 +414,7 @@ func (daemon *Daemon) deleteNetwork(networkID string, dynamic bool) error {
 
 	if runconfig.IsPreDefinedNetwork(nw.Name()) && !dynamic {
 		err := fmt.Errorf("%s is a pre-defined network and cannot be removed", nw.Name())
-		return errors.NewRequestForbiddenError(err)
+		return apierrors.NewRequestForbiddenError(err)
 	}
 
 	if err := nw.Delete(); err != nil {

@@ -1,0 +1,30 @@
+sudo: required
+
+services:
+  - docker
+
+language: go
+
+go:
+  - 1.7.4
+
+install:
+  - sudo sysctl -w vm.max_map_count=262144
+  - go get -u github.com/golang/lint/golint
+  - sudo apt-get update
+  - sudo apt-get install docker-engine
+  - docker swarm init --advertise-addr 127.0.0.1
+  - make install
+  - make TAG=local build-image
+  - amp platform pull --local
+  - amp platform start --local
+
+script:
+  - make test
+
+after_success:
+  - if [ "$TRAVIS_BRANCH" == "master" ] && [ "$TRAVIS_PULL_REQUEST" == "false" ]; then
+      docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD" &&
+      docker tag appcelerator/amp:local appcelerator/amp:latest &&
+      timeout 30 docker push appcelerator/amp:latest;
+    fi
