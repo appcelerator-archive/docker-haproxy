@@ -27,7 +27,7 @@ var etcdClient ETCDClient
 func (inst *ETCDClient) init() error {
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   conf.etcdEndpoints,
-		DialTimeout: 10 * time.Second,
+		DialTimeout: 5 * time.Second,
 	})
 	if err != nil {
 		return err
