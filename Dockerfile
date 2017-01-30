@@ -15,6 +15,7 @@ RUN apk update && apk upgrade && \
     go get -u github.com/Masterminds/glide/... && \
     glide install && \
     rm -rf vendor/github.com/appcelerator/amp/vendor && \
+    rm -rf vendor/github.com/docker/docker/vendor/golang.org/x/net/trace && \
     make install && \
     echo amp-haproxy built && \
     rm /go/bin/glide && \
