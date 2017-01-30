@@ -73,9 +73,11 @@ run: build
 
 install-deps:
 	@glide install
+	@rm -rf vendor/github.com/docker/docker/vendor/golang.org/x/net/trace
 
 update-deps:
 	@glide update
+	@rm -rf vendor/github.com/docker/docker/vendor/golang.org/x/net/trace
 
 test:
 	@go test -v $(REPO)
