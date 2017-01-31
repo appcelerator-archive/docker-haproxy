@@ -42,7 +42,6 @@ frontend main_http-in
     #rspadd Access-Control-Max-Age:\ 1728000 if { capture.req.hdr(0) -m found }
     #ACAO end---
     #infra
-    use_backend infra_elasticsearch if { hdr_beg(host) -i elasticsearch. }
     use_backend infra_grafana if { hdr_beg(host) -i grafana. }
     use_backend infra_registry if { hdr_beg(host) -i registry. }
     use_backend infra_amplifier-gateway if { hdr_beg(host) -i amplifier-api. }
